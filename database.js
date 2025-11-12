@@ -197,7 +197,7 @@ async function getLastMessage(db, supportToken) {
             throw new Error('PostgreSQL клиент не инициализирован');
         }
         const result = await db.query(
-            `SELECT * FROM messages WHERE supportToken = $1 ORDER BY createdAt DESC LIMIT 1`,
+            `SELECT * FROM messages WHERE supporttoken = $1 ORDER BY createdat DESC LIMIT 1`,
             [supportToken]
         );
         return result.rows[0] || null;
