@@ -21,15 +21,15 @@ async function initDatabase() {
             await pgClient.connect();
             console.log('✅ Подключено к PostgreSQL');
 
-            // Создаем таблицу сообщений (используем кавычки для сохранения регистра)
+            // Создаем таблицу сообщений (используем нижний регистр для совместимости)
             await pgClient.query(`
                 CREATE TABLE IF NOT EXISTS messages (
                     id SERIAL PRIMARY KEY,
-                    "supportToken" TEXT NOT NULL,
+                    supporttoken TEXT NOT NULL,
                     message TEXT,
                     image TEXT,
                     messagefrom INTEGER NOT NULL DEFAULT 1,
-                    "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    createdat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
             
@@ -110,7 +110,7 @@ async function saveMessage(db, supportToken, message, image, messageFrom) {
             throw new Error('PostgreSQL клиент не инициализирован');
         }
         const result = await db.query(
-            `INSERT INTO messages ("supportToken", message, image, messagefrom) VALUES ($1, $2, $3, $4) RETURNING *`,
+            `INSERT INTO messages (supporttoken, message, image, messagefrom) VALUES ($1, $2, $3, $4) RETURNING *`,
             [supportToken, message, image, messageFromNum]
         );
         const saved = result.rows[0];
@@ -151,7 +151,7 @@ async function getMessages(db, supportToken) {
             throw new Error('PostgreSQL клиент не инициализирован');
         }
         const result = await db.query(
-            `SELECT * FROM messages WHERE "supportToken" = $1 ORDER BY "createdAt" ASC`,
+            `SELECT * FROM messages WHERE supporttoken = $1 ORDER BY createdat ASC`,
             [supportToken]
         );
         
