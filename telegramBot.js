@@ -8,8 +8,16 @@ class TelegramSupportBot {
         console.log(`   OperatorChatId: ${operatorChatId || 'НЕ УКАЗАН'}`);
         console.log(`   DB: ${db ? 'OK' : 'НЕТ'}`);
         
-        // КРИТИЧЕСКИ ВАЖНО: Создаем бота БЕЗ polling сначала
-        this.bot = new TelegramBot(token, { polling: false });
+        // Создаем бота БЕЗ автозапуска polling
+        this.bot = new TelegramBot(token, { 
+            polling: false,
+            request: {
+                agentOptions: {
+                    keepAlive: true,
+                    keepAliveMsecs: 10000
+                }
+            }
+        });
         this.operatorChatId = operatorChatId;
         this.db = db;
         this.activeChats = new Map(); // supportToken -> messageId в Telegram
@@ -34,21 +42,38 @@ class TelegramSupportBot {
     startPolling() {
         try {
             console.log(`🔄 Запуск Telegram polling...`);
-            this.bot.startPolling({
-                restart: true
-            }).then(() => {
-                console.log(`✅ Telegram polling запущен успешно`);
-            }).catch(err => {
-                console.error(`❌ Ошибка запуска polling:`, err);
-                // Повторная попытка через 5 секунд
+            const result = this.bot.startPolling({
+                restart: true,
+                polling: {
+                    interval: 300,
+                    autoStart: true,
+                    params: {
+                        timeout: 10
+                    }
+                }
+            });
+            
+            if (result && typeof result.then === 'function') {
+                result.then(() => {
+                    console.log(`✅ Telegram polling запущен успешно`);
+                }).catch(err => {
+                    console.error(`❌ Ошибка запуска polling:`, err);
+                    setTimeout(() => this.startPolling(), 5000);
+                });
+            } else {
+                // Для версий библиотеки, где startPolling не возвращает Promise
                 setTimeout(() => {
-                    console.log(`🔄 Повторная попытка запуска polling...`);
-                    this.startPolling();
-                }, 5000);
+                    console.log(`✅ Telegram polling запущен (async)`);
+                }, 1000);
+            }
+            
+            this.bot.on('polling_error', (error) => {
+                console.error(`❌ Polling error:`, error.message, error.code);
             });
             
         } catch (error) {
             console.error(`❌ Критическая ошибка при запуске polling:`, error);
+            setTimeout(() => this.startPolling(), 5000);
         }
     }
 
