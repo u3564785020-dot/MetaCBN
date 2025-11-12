@@ -26,8 +26,12 @@ class TelegramSupportBot {
         // СНАЧАЛА регистрируем обработчики
         this.setupHandlers();
         
-        // ПОТОМ запускаем polling
-        this.startPolling();
+        // ПОТОМ запускаем polling (async, не блокируем конструктор)
+        setImmediate(() => {
+            this.startPolling().catch(err => {
+                console.error(`❌ Ошибка в startPolling:`, err);
+            });
+        });
         
         // Проверка соединения с Telegram
         this.bot.getMe().then(botInfo => {
