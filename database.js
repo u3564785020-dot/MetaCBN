@@ -21,23 +21,23 @@ async function initDatabase() {
             await pgClient.connect();
             console.log('✅ Подключено к PostgreSQL');
 
-            // Создаем таблицу сообщений
+            // Создаем таблицу сообщений (используем кавычки для сохранения регистра)
             await pgClient.query(`
                 CREATE TABLE IF NOT EXISTS messages (
                     id SERIAL PRIMARY KEY,
-                    supportToken TEXT NOT NULL,
+                    "supportToken" TEXT NOT NULL,
                     message TEXT,
                     image TEXT,
-                    messageFrom INTEGER NOT NULL DEFAULT 1,
-                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    messagefrom INTEGER NOT NULL DEFAULT 1,
+                    "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
             
             // Исправляем существующие записи с NULL или некорректными значениями
             await pgClient.query(`
                 UPDATE messages 
-                SET messageFrom = 1 
-                WHERE messageFrom IS NULL OR messageFrom NOT IN (0, 1)
+                SET messagefrom = 1 
+                WHERE messagefrom IS NULL OR messagefrom NOT IN (0, 1)
             `);
             
             console.log('✅ Таблица messages готова');
@@ -110,10 +110,15 @@ async function saveMessage(db, supportToken, message, image, messageFrom) {
             throw new Error('PostgreSQL клиент не инициализирован');
         }
         const result = await db.query(
-            `INSERT INTO messages (supportToken, message, image, messageFrom) VALUES ($1, $2, $3, $4) RETURNING *`,
+            `INSERT INTO messages ("supportToken", message, image, messagefrom) VALUES ($1, $2, $3, $4) RETURNING *`,
             [supportToken, message, image, messageFromNum]
         );
-        return result.rows[0];
+        const saved = result.rows[0];
+        // Нормализуем messageFrom для возврата
+        return {
+            ...saved,
+            messageFrom: saved.messagefrom || saved.messageFrom || messageFromNum
+        };
     } else {
         return new Promise((resolve, reject) => {
             const sql = `INSERT INTO messages (supportToken, message, image, messageFrom) VALUES (?, ?, ?, ?)`;
@@ -146,16 +151,19 @@ async function getMessages(db, supportToken) {
             throw new Error('PostgreSQL клиент не инициализирован');
         }
         const result = await db.query(
-            `SELECT * FROM messages WHERE supportToken = $1 ORDER BY createdAt ASC`,
+            `SELECT * FROM messages WHERE "supportToken" = $1 ORDER BY "createdAt" ASC`,
             [supportToken]
         );
         
-        // Нормализуем messageFrom (убеждаемся, что это число 0 или 1)
-        return result.rows.map(row => ({
-            ...row,
-            messageFrom: row.messageFrom === null || row.messageFrom === undefined ? 1 : 
-                        (parseInt(row.messageFrom, 10) === 0 ? 0 : 1)
-        }));
+        // Нормализуем messageFrom (PostgreSQL возвращает messagefrom в нижнем регистре)
+        return result.rows.map(row => {
+            const messageFrom = row.messagefrom || row.messageFrom;
+            return {
+                ...row,
+                messageFrom: messageFrom === null || messageFrom === undefined ? 1 : 
+                            (parseInt(messageFrom, 10) === 0 ? 0 : 1)
+            };
+        });
     } else {
         return new Promise((resolve, reject) => {
             const sql = `SELECT * FROM messages WHERE supportToken = ? ORDER BY createdAt ASC`;

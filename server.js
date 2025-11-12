@@ -183,7 +183,7 @@ app.get('/api/debug/status', async (req, res) => {
         if (db) {
             try {
                 const testQuery = USE_POSTGRES 
-                    ? await db.query('SELECT COUNT(*) as count FROM messages WHERE "messageFrom" = 0')
+                    ? await db.query('SELECT COUNT(*) as count FROM messages WHERE messagefrom = 0')
                     : await new Promise((resolve, reject) => {
                         db.get('SELECT COUNT(*) as count FROM messages WHERE messageFrom = 0', (err, row) => {
                             if (err) reject(err);
