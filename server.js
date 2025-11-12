@@ -4,6 +4,10 @@ const fs = require('fs');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const { initDatabase, saveMessage, getMessages } = require('./database');
+
+// Определяем USE_POSTGRES для диагностики
+const DATABASE_URL = process.env.DATABASE_URL;
+const USE_POSTGRES = DATABASE_URL && DATABASE_URL.startsWith('postgresql://');
 const TelegramSupportBot = require('./telegramBot');
 
 const app = express();
@@ -133,6 +137,13 @@ app.post('/api/support/getMessages1', async (req, res) => {
         // Получаем все сообщения из БД
         const messages = await getMessages(db, supportToken);
         
+        // ДИАГНОСТИКА: Логируем что получили из БД
+        console.log(`🔍 [DIAG] Запрос для токена: ${supportToken}`);
+        console.log(`🔍 [DIAG] Получено из БД: ${messages.length} сообщений`);
+        messages.forEach((m, i) => {
+            console.log(`🔍 [DIAG] [${i}] ID=${m.id}, messageFrom=${m.messageFrom} (тип: ${typeof m.messageFrom}), message="${m.message?.substring(0, 30) || '[изображение]'}"`);
+        });
+        
         // Форматируем сообщения для клиента
         const formattedMessages = messages.map(m => ({
             id: m.id,
@@ -142,6 +153,11 @@ app.post('/api/support/getMessages1', async (req, res) => {
             createdAt: m.createdAt
         }));
         
+        // ДИАГНОСТИКА: Логируем что отправляем клиенту
+        const operatorMsgs = formattedMessages.filter(m => m.messageFrom === 0);
+        const clientMsgs = formattedMessages.filter(m => m.messageFrom === 1);
+        console.log(`🔍 [DIAG] Отправляем клиенту: ${formattedMessages.length} сообщений (${clientMsgs.length} от клиента, ${operatorMsgs.length} от оператора)`);
+        
         res.json({ 
             success: true, 
             messages: formattedMessages
@@ -149,6 +165,41 @@ app.post('/api/support/getMessages1', async (req, res) => {
     } catch (error) {
         console.error('❌ Ошибка получения сообщений:', error);
         res.status(500).json({ error: 'Ошибка получения сообщений' });
+    }
+});
+
+// ДИАГНОСТИЧЕСКИЙ ENDPOINT: Проверка состояния системы
+app.get('/api/debug/status', async (req, res) => {
+    try {
+        const status = {
+            db: db ? 'connected' : 'not connected',
+            telegramBot: telegramBot ? 'initialized' : 'not initialized',
+            operatorChatId: process.env.TELEGRAM_OPERATOR_CHAT_ID || 'not set',
+            activeChats: telegramBot ? telegramBot.activeChats.size : 0,
+            pendingReply: telegramBot ? telegramBot.pendingReply : null
+        };
+        
+        // Проверяем БД напрямую
+        if (db) {
+            try {
+                const testQuery = USE_POSTGRES 
+                    ? await db.query('SELECT COUNT(*) as count FROM messages WHERE "messageFrom" = 0')
+                    : await new Promise((resolve, reject) => {
+                        db.get('SELECT COUNT(*) as count FROM messages WHERE messageFrom = 0', (err, row) => {
+                            if (err) reject(err);
+                            else resolve(row);
+                        });
+                    });
+                
+                status.dbOperatorMessages = USE_POSTGRES ? testQuery.rows[0].count : testQuery.count;
+            } catch (e) {
+                status.dbError = e.message;
+            }
+        }
+        
+        res.json(status);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
