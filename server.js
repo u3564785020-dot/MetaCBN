@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const bodyParser = require('body-parser');
 const multer = require('multer');
-const { initDatabase, saveMessage, getMessages } = require('./database');
+const { initDatabase, saveMessage, getMessages, fixNullMessageFrom } = require('./database');
 const TelegramSupportBot = require('./telegramBot');
 
 const app = express();
@@ -43,6 +43,13 @@ let telegramBot;
         console.log('✅ База данных успешно инициализирована');
         console.log(`📊 Тип БД: ${process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://') ? 'PostgreSQL' : 'SQLite'}`);
         console.log(`📊 db объект:`, db ? (db.query ? 'PostgreSQL Client' : 'SQLite Database') : 'undefined');
+        
+        // Исправляем все существующие записи с NULL значениями
+        try {
+            await fixNullMessageFrom(db);
+        } catch (fixError) {
+            console.error('⚠️ Ошибка при исправлении NULL значений при инициализации:', fixError.message);
+        }
         
         // Инициализируем Telegram бота (если токен указан)
         const telegramToken = process.env.TELEGRAM_BOT_TOKEN;

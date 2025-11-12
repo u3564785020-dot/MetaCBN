@@ -34,11 +34,15 @@ async function initDatabase() {
             `);
             
             // Исправляем существующие записи с NULL или некорректными значениями
-            await pgClient.query(`
+            const updateResult = await pgClient.query(`
                 UPDATE messages 
                 SET messageFrom = 1 
                 WHERE messageFrom IS NULL OR messageFrom NOT IN (0, 1)
             `);
+            
+            if (updateResult.rowCount > 0) {
+                console.log(`✅ Исправлено ${updateResult.rowCount} записей с NULL или некорректными значениями messageFrom`);
+            }
             
             console.log('Таблица messages создана/проверена, исправлены некорректные записи');
             return pgClient;
@@ -81,10 +85,13 @@ async function initDatabase() {
                     UPDATE messages 
                     SET messageFrom = 1 
                     WHERE messageFrom IS NULL OR messageFrom NOT IN (0, 1)
-                `, (updateErr) => {
+                `, function(updateErr) {
                     if (updateErr) {
                         console.error('Ошибка исправления записей:', updateErr.message);
                     } else {
+                        if (this.changes > 0) {
+                            console.log(`✅ Исправлено ${this.changes} записей с NULL или некорректными значениями messageFrom`);
+                        }
                         console.log('Таблица messages создана/проверена, исправлены некорректные записи');
                     }
                     resolve(db);
@@ -152,21 +159,38 @@ async function getMessages(db, supportToken) {
             [supportToken]
         );
         // Убеждаемся, что messageFrom всегда число (0 или 1)
-        const normalized = result.rows.map(row => {
+        const normalized = await Promise.all(result.rows.map(async (row) => {
             let messageFrom = row.messageFrom;
             
-            // Обработка NULL или undefined
+            // Обработка NULL или undefined - исправляем в БД
             if (messageFrom === null || messageFrom === undefined) {
                 console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: messageFrom = NULL для сообщения ID=${row.id}, токен=${supportToken}`);
-                // Пытаемся определить по контексту или устанавливаем значение по умолчанию
-                // Если это старые данные, пропускаем их или устанавливаем 1 (клиент) по умолчанию
+                // Исправляем запись в БД
+                try {
+                    await db.query(
+                        `UPDATE messages SET messageFrom = 1 WHERE id = $1`,
+                        [row.id]
+                    );
+                    console.log(`🔧 Исправлена запись ID=${row.id} в БД: messageFrom установлен в 1`);
+                } catch (fixErr) {
+                    console.error(`❌ Ошибка исправления записи ID=${row.id}:`, fixErr.message);
+                }
                 messageFrom = 1; // По умолчанию считаем клиентом для старых записей
             }
             
             const messageFromNum = parseInt(messageFrom, 10);
             if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
                 console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom для ID=${row.id}: ${messageFrom} (тип: ${typeof messageFrom})`);
-                // Исправляем некорректные данные
+                // Исправляем некорректные данные в БД
+                try {
+                    await db.query(
+                        `UPDATE messages SET messageFrom = 1 WHERE id = $1`,
+                        [row.id]
+                    );
+                    console.log(`🔧 Исправлена запись ID=${row.id} в БД: некорректный messageFrom исправлен на 1`);
+                } catch (fixErr) {
+                    console.error(`❌ Ошибка исправления записи ID=${row.id}:`, fixErr.message);
+                }
                 return {
                     ...row,
                     messageFrom: 1 // По умолчанию клиент
@@ -177,7 +201,7 @@ async function getMessages(db, supportToken) {
                 ...row,
                 messageFrom: messageFromNum
             };
-        });
+        }));
         console.log(`📥 Получено из PostgreSQL для токена ${supportToken}: ${normalized.length} сообщений`);
         normalized.forEach((m, i) => {
             if (i < 3 || i >= normalized.length - 3) {
@@ -198,15 +222,39 @@ async function getMessages(db, supportToken) {
                 const normalized = rows.map(row => {
                     let messageFrom = row.messageFrom;
                     
-                    // Обработка NULL или undefined
+                    // Обработка NULL или undefined - исправляем в БД
                     if (messageFrom === null || messageFrom === undefined) {
                         console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: messageFrom = NULL для сообщения ID=${row.id}, токен=${supportToken}`);
+                        // Исправляем запись в БД
+                        db.run(
+                            `UPDATE messages SET messageFrom = 1 WHERE id = ?`,
+                            [row.id],
+                            function(fixErr) {
+                                if (fixErr) {
+                                    console.error(`❌ Ошибка исправления записи ID=${row.id}:`, fixErr.message);
+                                } else {
+                                    console.log(`🔧 Исправлена запись ID=${row.id} в БД: messageFrom установлен в 1`);
+                                }
+                            }
+                        );
                         messageFrom = 1; // По умолчанию клиент
                     }
                     
                     const messageFromNum = parseInt(messageFrom, 10);
                     if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
                         console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom для ID=${row.id}: ${messageFrom} (тип: ${typeof messageFrom})`);
+                        // Исправляем некорректные данные в БД
+                        db.run(
+                            `UPDATE messages SET messageFrom = 1 WHERE id = ?`,
+                            [row.id],
+                            function(fixErr) {
+                                if (fixErr) {
+                                    console.error(`❌ Ошибка исправления записи ID=${row.id}:`, fixErr.message);
+                                } else {
+                                    console.log(`🔧 Исправлена запись ID=${row.id} в БД: некорректный messageFrom исправлен на 1`);
+                                }
+                            }
+                        );
                         return {
                             ...row,
                             messageFrom: 1 // По умолчанию клиент
@@ -259,10 +307,56 @@ async function getLastMessage(db, supportToken) {
     }
 }
 
+// Функция для исправления всех записей с NULL значениями messageFrom
+async function fixNullMessageFrom(db) {
+    if (!db) {
+        throw new Error('База данных не инициализирована');
+    }
+    
+    try {
+        if (USE_POSTGRES) {
+            if (!db.query) {
+                throw new Error('PostgreSQL клиент не инициализирован');
+            }
+            const result = await db.query(`
+                UPDATE messages 
+                SET messageFrom = 1 
+                WHERE messageFrom IS NULL
+            `);
+            if (result.rowCount > 0) {
+                console.log(`🔧 Исправлено ${result.rowCount} записей с NULL messageFrom в PostgreSQL`);
+            }
+            return result.rowCount;
+        } else {
+            return new Promise((resolve, reject) => {
+                db.run(`
+                    UPDATE messages 
+                    SET messageFrom = 1 
+                    WHERE messageFrom IS NULL
+                `, function(err) {
+                    if (err) {
+                        console.error('❌ Ошибка исправления NULL значений:', err);
+                        reject(err);
+                        return;
+                    }
+                    if (this.changes > 0) {
+                        console.log(`🔧 Исправлено ${this.changes} записей с NULL messageFrom в SQLite`);
+                    }
+                    resolve(this.changes);
+                });
+            });
+        }
+    } catch (error) {
+        console.error('❌ Ошибка при исправлении NULL значений:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     initDatabase,
     saveMessage,
     getMessages,
-    getLastMessage
+    getLastMessage,
+    fixNullMessageFrom
 };
 
