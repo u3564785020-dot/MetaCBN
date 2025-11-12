@@ -143,6 +143,17 @@ app.post('/api/support/getMessages1', async (req, res) => {
         console.log(`📤 Отправка ${formattedMessages.length} сообщений клиенту. Типы messageFrom:`, 
             formattedMessages.map(m => typeof m.messageFrom));
         
+        // Дополнительная проверка: есть ли сообщения от оператора
+        const operatorMessages = formattedMessages.filter(m => m.messageFrom === 0);
+        const clientMessages = formattedMessages.filter(m => m.messageFrom === 1);
+        console.log(`📊 Статистика: ${clientMessages.length} от клиента, ${operatorMessages.length} от оператора`);
+        if (operatorMessages.length > 0) {
+            console.log(`✅ Сообщения от оператора найдены:`, operatorMessages.map(m => ({
+                id: m.id,
+                message: m.message?.substring(0, 50)
+            })));
+        }
+        
         res.json({ 
             success: true, 
             messages: formattedMessages
