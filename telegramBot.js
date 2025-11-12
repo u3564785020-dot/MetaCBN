@@ -71,20 +71,34 @@ class TelegramSupportBot {
                 
                 if (supportToken) {
                     try {
-                        console.log(`💾 Сохранение ответа оператора в БД. Токен: ${supportToken}, Сообщение: "${text}", messageFrom: 0`);
+                        console.log(`💾 Сохранение ответа оператора в БД. Токен: ${supportToken}, Сообщение: "${text}", messageFrom: 0 (ОПЕРАТОР)`);
                         
                         // Сохраняем ответ оператора в БД
                         const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
-                        console.log(`✅ Оператор ответил на чат ${supportToken}: "${text}". Сохранено в БД с ID: ${savedMessage.id}, messageFrom: ${savedMessage.messageFrom || 0}`);
+                        console.log(`✅ Оператор ответил на чат ${supportToken}: "${text}". Сохранено в БД с ID: ${savedMessage.id}, messageFrom: ${savedMessage.messageFrom} (тип: ${typeof savedMessage.messageFrom})`);
+                        
+                        // КРИТИЧЕСКАЯ ПРОВЕРКА: убеждаемся, что messageFrom = 0
+                        if (savedMessage.messageFrom !== 0) {
+                            console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Сообщение оператора сохранено с НЕПРАВИЛЬНЫМ messageFrom=${savedMessage.messageFrom} вместо 0!`);
+                        }
                         
                         // Проверяем, что сообщение действительно сохранилось
                         const verifyMessages = await getMessages(this.db, supportToken);
+                        const operatorMsgs = verifyMessages.filter(m => m.messageFrom === 0);
+                        const clientMsgs = verifyMessages.filter(m => m.messageFrom === 1);
+                        console.log(`🔍 Проверка после сохранения: Всего сообщений для токена ${supportToken}: ${verifyMessages.length} (${clientMsgs.length} от клиента, ${operatorMsgs.length} от оператора)`);
+                        
                         const lastMessage = verifyMessages[verifyMessages.length - 1];
-                        console.log(`🔍 Проверка: Последнее сообщение в БД для токена ${supportToken}:`, {
+                        console.log(`🔍 Последнее сообщение в БД для токена ${supportToken}:`, {
                             id: lastMessage?.id,
                             messageFrom: lastMessage?.messageFrom,
+                            messageFromType: typeof lastMessage?.messageFrom,
                             message: lastMessage?.message?.substring(0, 50)
                         });
+                        
+                        if (operatorMsgs.length === 0) {
+                            console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: После сохранения сообщения оператора в БД не найдено ни одного сообщения с messageFrom=0!`);
+                        }
                         
                         // Отправляем красивое подтверждение оператору
                         const escapedToken = this.escapeMarkdownV2(supportToken);

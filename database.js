@@ -125,7 +125,13 @@ async function saveMessage(db, supportToken, message, image, messageFrom) {
             [supportToken, message, image, messageFromNum]
         );
         const saved = result.rows[0];
-        console.log(`✅ Сохранено в PostgreSQL: ID=${saved.id}, messageFrom=${saved.messageFrom}`);
+        console.log(`✅ Сохранено в PostgreSQL: ID=${saved.id}, messageFrom=${saved.messageFrom} (тип: ${typeof saved.messageFrom}, значение: ${JSON.stringify(saved.messageFrom)})`);
+        
+        // Дополнительная проверка сохраненного значения
+        if (saved.messageFrom !== messageFromNum) {
+            console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Сохраненное значение messageFrom (${saved.messageFrom}) не совпадает с отправленным (${messageFromNum})!`);
+        }
+        
         return saved;
     } else {
         return new Promise((resolve, reject) => {
@@ -203,9 +209,25 @@ async function getMessages(db, supportToken) {
             };
         }));
         console.log(`📥 Получено из PostgreSQL для токена ${supportToken}: ${normalized.length} сообщений`);
+        
+        // Подсчитываем сообщения от оператора и клиента
+        const operatorMsgs = normalized.filter(m => m.messageFrom === 0);
+        const clientMsgs = normalized.filter(m => m.messageFrom === 1);
+        console.log(`📊 Статистика из БД: ${clientMsgs.length} от клиента, ${operatorMsgs.length} от оператора`);
+        
+        if (operatorMsgs.length > 0) {
+            console.log(`✅ Сообщения от оператора найдены в БД (${operatorMsgs.length} шт.):`, operatorMsgs.map(m => ({
+                id: m.id,
+                messageFrom: m.messageFrom,
+                message: m.message?.substring(0, 30) || '[изображение]'
+            })));
+        } else {
+            console.warn(`⚠️ ВНИМАНИЕ: В БД нет сообщений от оператора для токена ${supportToken}!`);
+        }
+        
         normalized.forEach((m, i) => {
             if (i < 3 || i >= normalized.length - 3) {
-                console.log(`  [${i}] ID=${m.id}, messageFrom=${m.messageFrom} (${m.messageFrom === 1 ? 'клиент' : 'оператор'}), message="${m.message?.substring(0, 30) || '[изображение]'}"`);
+                console.log(`  [${i}] ID=${m.id}, messageFrom=${m.messageFrom} (тип: ${typeof m.messageFrom}, ${m.messageFrom === 1 ? 'клиент' : 'оператор'}), message="${m.message?.substring(0, 30) || '[изображение]'}"`);
             }
         });
         return normalized;

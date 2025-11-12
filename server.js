@@ -154,10 +154,17 @@ app.post('/api/support/getMessages1', async (req, res) => {
         const messages = await getMessages(db, supportToken);
         
         console.log(`📨 Найдено сообщений для токена ${supportToken}: ${messages.length}`);
+        
+        // Детальное логирование ВСЕХ сообщений перед обработкой
+        console.log(`🔍 ДЕТАЛЬНАЯ ПРОВЕРКА всех сообщений для токена ${supportToken}:`);
+        messages.forEach((m, idx) => {
+            console.log(`  [${idx}] ID=${m.id}, messageFrom=${m.messageFrom} (тип: ${typeof m.messageFrom}, значение: ${JSON.stringify(m.messageFrom)}), message="${m.message?.substring(0, 30) || '[изображение]'}"`);
+        });
+        
         if (messages.length > 0) {
             console.log(`Последние сообщения:`, messages.slice(-3).map(m => ({
                 id: m.id,
-                from: m.messageFrom === 1 ? 'клиент' : 'оператор',
+                from: m.messageFrom === 1 ? 'клиент' : (m.messageFrom === 0 ? 'оператор' : `НЕИЗВЕСТНО(${m.messageFrom})`),
                 message: m.message ? m.message.substring(0, 50) : '[изображение]'
             })));
         }
@@ -184,13 +191,22 @@ app.post('/api/support/getMessages1', async (req, res) => {
                         createdAt: m.createdAt
                     };
                 }
-                return {
+                
+                // ВАЖНО: Сохраняем правильное значение (0 для оператора, 1 для клиента)
+                const result = {
                     id: m.id,
                     message: m.message,
                     image: m.image,
                     messageFrom: messageFromNum, // Гарантированно число: 0 или 1
                     createdAt: m.createdAt
                 };
+                
+                // Логируем сообщения от оператора для отладки
+                if (messageFromNum === 0) {
+                    console.log(`✅ ОПЕРАТОР: ID=${m.id}, message="${m.message?.substring(0, 30) || '[изображение]'}"`);
+                }
+                
+                return result;
             })
             .filter(m => m.messageFrom === 0 || m.messageFrom === 1); // Фильтруем только валидные
         
