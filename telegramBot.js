@@ -60,11 +60,22 @@ class TelegramSupportBot {
             const chatId = msg.chat.id;
             const text = msg.text;
 
-            console.log(`📨 Получено сообщение в Telegram. ChatId: ${chatId}, OperatorChatId: ${this.operatorChatId}, Text: "${text}", IsOperator: ${chatId.toString() === this.operatorChatId.toString()}`);
+            console.log(`📨 TELEGRAM MESSAGE RECEIVED:`);
+            console.log(`   ChatId: ${chatId} (тип: ${typeof chatId})`);
+            console.log(`   OperatorChatId: ${this.operatorChatId} (тип: ${typeof this.operatorChatId})`);
+            console.log(`   Text: "${text}"`);
+            console.log(`   IsOperator: ${chatId.toString() === this.operatorChatId.toString()}`);
+            console.log(`   Username: @${msg.from?.username || 'unknown'}`);
+            console.log(`   FirstName: ${msg.from?.first_name || 'unknown'}`);
 
             // Игнорируем служебные сообщения и команды
-            if (msg.photo || msg.document || msg.sticker || text?.startsWith('/')) {
-                console.log(`⏭️ Пропущено служебное сообщение или команда`);
+            if (msg.photo || msg.document || msg.sticker) {
+                console.log(`⏭️ Пропущено служебное сообщение (фото/документ/стикер)`);
+                return;
+            }
+            
+            if (text?.startsWith('/')) {
+                console.log(`⏭️ Пропущено: команда`);
                 return;
             }
 
