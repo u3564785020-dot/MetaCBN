@@ -29,9 +29,13 @@ class TelegramSupportBot {
                 console.log(`Кнопка "Ответить" нажата. Установлен pendingReply: ${supportToken}`);
                 
                 await this.bot.answerCallbackQuery(query.id);
+                const escapedToken = this.escapeMarkdownV2(supportToken);
                 await this.bot.sendMessage(chatId, 
-                    `💬 Теперь отправьте ответ для клиента с токеном: ${supportToken}\n` +
-                    `Или ответьте на сообщение клиента (reply)`
+                    `💬 *Готово к ответу*\n\n` +
+                    `🔑 Токен: \`${escapedToken}\`\n\n` +
+                    `📝 Отправьте ваш ответ текстом\n` +
+                    `Или ответьте на сообщение клиента \\(reply\\)`,
+                    { parse_mode: 'MarkdownV2' }
                 );
             }
         });
@@ -71,21 +75,35 @@ class TelegramSupportBot {
                         const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
                         console.log(`✅ Оператор ответил на чат ${supportToken}: "${text}". Сохранено в БД с ID: ${savedMessage.id}`);
                         
-                        // Отправляем подтверждение оператору
-                        await this.bot.sendMessage(chatId, `✅ Ответ отправлен клиенту с токеном: ${supportToken}`);
+                        // Отправляем красивое подтверждение оператору
+                        const escapedToken = this.escapeMarkdownV2(supportToken);
+                        await this.bot.sendMessage(chatId, 
+                            `✅ *Ответ отправлен*\n\n` +
+                            `🔑 Токен: \`${escapedToken}\`\n` +
+                            `💬 Клиент получит ваш ответ`,
+                            { parse_mode: 'MarkdownV2' }
+                        );
                     } catch (error) {
                         console.error(`❌ Ошибка сохранения ответа оператора:`, error);
-                        await this.bot.sendMessage(chatId, `❌ Ошибка отправки ответа: ${error.message}`);
+                        const escapedToken = this.escapeMarkdownV2(supportToken);
+                        const escapedError = this.escapeMarkdownV2(error.message);
+                        await this.bot.sendMessage(chatId, 
+                            `❌ *Ошибка отправки*\n\n` +
+                            `🔑 Токен: \`${escapedToken}\`\n` +
+                            `⚠️ Ошибка: ${escapedError}`,
+                            { parse_mode: 'MarkdownV2' }
+                        );
                     }
                 } else {
                     // Если нет активного чата, показываем инструкцию
                     console.log(`⚠️ Не удалось определить токен для ответа`);
                     await this.bot.sendMessage(chatId, 
-                        '❓ Не понятно, кому отвечать.\n\n' +
-                        'Для ответа клиенту:\n' +
-                        '1. Нажмите кнопку "💬 Ответить" под сообщением клиента\n' +
-                        '2. Или ответьте на сообщение клиента (reply)\n' +
-                        '3. Или используйте команду: /reply <supportToken> <сообщение>'
+                        '❓ *Не понятно, кому отвечать*\n\n' +
+                        '📋 *Для ответа клиенту:*\n\n' +
+                        '1️⃣ Нажмите кнопку "💬 Ответить" под сообщением клиента\n' +
+                        '2️⃣ Или ответьте на сообщение клиента \\(reply\\)\n' +
+                        '3️⃣ Или используйте команду:\n`/reply <токен> <сообщение>`',
+                        { parse_mode: 'MarkdownV2' }
                     );
                 }
             }
@@ -103,7 +121,13 @@ class TelegramSupportBot {
             const replyText = match[2];
 
             await saveMessage(this.db, supportToken, replyText, null, 0);
-            await this.bot.sendMessage(chatId, `✅ Ответ отправлен клиенту с токеном: ${supportToken}`);
+            const escapedToken = this.escapeMarkdownV2(supportToken);
+            await this.bot.sendMessage(chatId, 
+                `✅ *Ответ отправлен*\n\n` +
+                `🔑 Токен: \`${escapedToken}\`\n` +
+                `💬 Клиент получит ваш ответ`,
+                { parse_mode: 'MarkdownV2' }
+            );
         });
 
         // Обработка команды /chats - список активных чатов
@@ -115,10 +139,13 @@ class TelegramSupportBot {
             }
 
             const activeChatsList = Array.from(this.activeChats.keys())
-                .map(token => `• ${token}`)
-                .join('\n') || 'Нет активных чатов';
+                .map(token => `🔑 \`${this.escapeMarkdownV2(token)}\``)
+                .join('\n') || '📭 Нет активных чатов';
 
-            this.bot.sendMessage(chatId, `Активные чаты:\n${activeChatsList}`);
+            this.bot.sendMessage(chatId, 
+                `📋 *Активные чаты:*\n\n${activeChatsList}`,
+                { parse_mode: 'MarkdownV2' }
+            );
         });
 
         // Обработка команды /history <supportToken> - история чата
@@ -133,37 +160,78 @@ class TelegramSupportBot {
             const messages = await getMessages(this.db, supportToken);
             
             if (messages.length === 0) {
-                this.bot.sendMessage(chatId, `История чата ${supportToken} пуста`);
+                const escapedToken = this.escapeMarkdownV2(supportToken);
+                this.bot.sendMessage(chatId, 
+                    `📭 История чата \`${escapedToken}\` пуста`,
+                    { parse_mode: 'MarkdownV2' }
+                );
                 return;
             }
 
-            const history = messages
+            const escapedToken = this.escapeMarkdownV2(supportToken);
+            let history = `📜 *История чата*\n\n`;
+            history += `🔑 Токен: \`${escapedToken}\`\n\n`;
+            history += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+            const historyMessages = messages
                 .map(m => {
-                    const from = m.messageFrom === 1 ? '👤 Клиент' : '👨‍💼 Оператор';
-                    return `${from}: ${m.message || '[Изображение]'}`;
+                    const from = m.messageFrom === 1 ? '👤 *Клиент*' : '👨‍💼 *Оператор*';
+                    const message = this.escapeMarkdownV2(m.message || '📷 [Изображение]');
+                    return `${from}:\n${message}`;
                 })
-                .join('\n\n');
+                .join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
+
+            history += historyMessages;
 
             // Telegram ограничивает длину сообщения 4096 символов
             if (history.length > 4000) {
                 const chunks = history.match(/.{1,4000}/g) || [];
                 for (const chunk of chunks) {
-                    await this.bot.sendMessage(chatId, chunk);
+                    await this.bot.sendMessage(chatId, chunk, { parse_mode: 'MarkdownV2' });
                 }
             } else {
-                this.bot.sendMessage(chatId, `История чата ${supportToken}:\n\n${history}`);
+                this.bot.sendMessage(chatId, history, { parse_mode: 'MarkdownV2' });
             }
         });
 
         console.log('Telegram бот инициализирован');
     }
 
+    // Экранирование специальных символов для MarkdownV2
+    escapeMarkdownV2(text) {
+        if (!text) return '';
+        return text.toString()
+            .replace(/\_/g, '\\_')
+            .replace(/\*/g, '\\*')
+            .replace(/\[/g, '\\[')
+            .replace(/\]/g, '\\]')
+            .replace(/\(/g, '\\(')
+            .replace(/\)/g, '\\)')
+            .replace(/\~/g, '\\~')
+            .replace(/\`/g, '\\`')
+            .replace(/\>/g, '\\>')
+            .replace(/\#/g, '\\#')
+            .replace(/\+/g, '\\+')
+            .replace(/\-/g, '\\-')
+            .replace(/\=/g, '\\=')
+            .replace(/\|/g, '\\|')
+            .replace(/\{/g, '\\{')
+            .replace(/\}/g, '\\}')
+            .replace(/\./g, '\\.')
+            .replace(/\!/g, '\\!');
+    }
+
     // Отправка сообщения от клиента оператору в Telegram
     async sendToOperator(supportToken, message, imageBuffer = null) {
         try {
-            let telegramMessage = `📩 Новое сообщение от клиента\n\n`;
-            telegramMessage += `Токен: \`${supportToken}\`\n`;
-            telegramMessage += `Сообщение: ${message || '[Изображение]'}`;
+            // Красивое форматирование сообщения
+            const escapedMessage = this.escapeMarkdownV2(message || '📷 [Изображение]');
+            const escapedToken = this.escapeMarkdownV2(supportToken);
+            
+            let telegramMessage = `🔔 *НОВОЕ СООБЩЕНИЕ ОТ КЛИЕНТА*\n\n`;
+            telegramMessage += `🔑 *Токен:* \`${escapedToken}\`\n`;
+            telegramMessage += `💬 *Сообщение:*\n${escapedMessage}`;
+            telegramMessage += `\n\n━━━━━━━━━━━━━━━━━━━━`;
 
             const replyMarkup = {
                 inline_keyboard: [[
@@ -175,7 +243,7 @@ class TelegramSupportBot {
                 // Отправляем изображение как Buffer с подписью
                 const sentMsg = await this.bot.sendPhoto(this.operatorChatId, imageBuffer, {
                     caption: telegramMessage,
-                    parse_mode: 'Markdown',
+                    parse_mode: 'MarkdownV2',
                     reply_markup: replyMarkup
                 });
                 
@@ -184,7 +252,7 @@ class TelegramSupportBot {
             } else {
                 // Отправляем текстовое сообщение
                 const sentMsg = await this.bot.sendMessage(this.operatorChatId, telegramMessage, {
-                    parse_mode: 'Markdown',
+                    parse_mode: 'MarkdownV2',
                     reply_markup: replyMarkup
                 });
 
@@ -195,6 +263,34 @@ class TelegramSupportBot {
             console.log(`Сообщение отправлено оператору для токена: ${supportToken}`);
         } catch (error) {
             console.error('Ошибка отправки в Telegram:', error);
+            // Fallback на обычное форматирование если MarkdownV2 не работает
+            try {
+                let telegramMessage = `🔔 НОВОЕ СООБЩЕНИЕ ОТ КЛИЕНТА\n\n`;
+                telegramMessage += `🔑 Токен: ${supportToken}\n`;
+                telegramMessage += `💬 Сообщение:\n${message || '📷 [Изображение]'}`;
+                telegramMessage += `\n\n━━━━━━━━━━━━━━━━━━━━`;
+
+                const replyMarkup = {
+                    inline_keyboard: [[
+                        { text: '💬 Ответить', callback_data: `reply_${supportToken}` }
+                    ]]
+                };
+
+                if (imageBuffer) {
+                    const sentMsg = await this.bot.sendPhoto(this.operatorChatId, imageBuffer, {
+                        caption: telegramMessage,
+                        reply_markup: replyMarkup
+                    });
+                    this.activeChats.set(supportToken, sentMsg.message_id);
+                } else {
+                    const sentMsg = await this.bot.sendMessage(this.operatorChatId, telegramMessage, {
+                        reply_markup: replyMarkup
+                    });
+                    this.activeChats.set(supportToken, sentMsg.message_id);
+                }
+            } catch (fallbackError) {
+                console.error('Ошибка fallback отправки:', fallbackError);
+            }
         }
     }
 
