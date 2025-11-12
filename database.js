@@ -96,6 +96,10 @@ async function initDatabase() {
 
 // Сохранение сообщения
 async function saveMessage(db, supportToken, message, image, messageFrom) {
+    if (!db) {
+        throw new Error('База данных не инициализирована');
+    }
+    
     // Убеждаемся, что messageFrom всегда число (0 или 1)
     const messageFromNum = parseInt(messageFrom, 10);
     if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
@@ -106,6 +110,9 @@ async function saveMessage(db, supportToken, message, image, messageFrom) {
     console.log(`💾 Сохранение сообщения: токен=${supportToken}, messageFrom=${messageFromNum} (${messageFromNum === 1 ? 'клиент' : 'оператор'}), сообщение="${message?.substring(0, 50) || '[изображение]'}"`);
     
     if (USE_POSTGRES) {
+        if (!db.query) {
+            throw new Error('PostgreSQL клиент не инициализирован или некорректный объект БД');
+        }
         const result = await db.query(
             `INSERT INTO messages (supportToken, message, image, messageFrom) VALUES ($1, $2, $3, $4) RETURNING *`,
             [supportToken, message, image, messageFromNum]
@@ -132,7 +139,14 @@ async function saveMessage(db, supportToken, message, image, messageFrom) {
 
 // Получение всех сообщений для токена
 async function getMessages(db, supportToken) {
+    if (!db) {
+        throw new Error('База данных не инициализирована');
+    }
+    
     if (USE_POSTGRES) {
+        if (!db.query) {
+            throw new Error('PostgreSQL клиент не инициализирован или некорректный объект БД');
+        }
         const result = await db.query(
             `SELECT * FROM messages WHERE supportToken = $1 ORDER BY createdAt ASC`,
             [supportToken]
@@ -218,7 +232,14 @@ async function getMessages(db, supportToken) {
 
 // Получение последнего сообщения для токена (для Telegram)
 async function getLastMessage(db, supportToken) {
+    if (!db) {
+        throw new Error('База данных не инициализирована');
+    }
+    
     if (USE_POSTGRES) {
+        if (!db.query) {
+            throw new Error('PostgreSQL клиент не инициализирован или некорректный объект БД');
+        }
         const result = await db.query(
             `SELECT * FROM messages WHERE supportToken = $1 ORDER BY createdAt DESC LIMIT 1`,
             [supportToken]

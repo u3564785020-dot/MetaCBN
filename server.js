@@ -31,8 +31,18 @@ let telegramBot;
 
 (async () => {
     try {
+        console.log('🔄 Начало инициализации базы данных...');
         // Инициализируем БД
         db = await initDatabase();
+        
+        if (!db) {
+            console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: initDatabase() вернул undefined или null');
+            return;
+        }
+        
+        console.log('✅ База данных успешно инициализирована');
+        console.log(`📊 Тип БД: ${process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://') ? 'PostgreSQL' : 'SQLite'}`);
+        console.log(`📊 db объект:`, db ? (db.query ? 'PostgreSQL Client' : 'SQLite Database') : 'undefined');
         
         // Инициализируем Telegram бота (если токен указан)
         const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -40,18 +50,24 @@ let telegramBot;
         
         if (telegramToken && operatorChatId) {
             telegramBot = new TelegramSupportBot(telegramToken, operatorChatId, db);
-            console.log('Telegram бот запущен');
+            console.log('✅ Telegram бот запущен');
         } else {
             console.warn('⚠️ Telegram бот не настроен. Установите TELEGRAM_BOT_TOKEN и TELEGRAM_OPERATOR_CHAT_ID');
         }
     } catch (error) {
-        console.error('Ошибка инициализации:', error);
+        console.error('❌ КРИТИЧЕСКАЯ ОШИБКА инициализации:', error);
+        console.error('❌ Стек ошибки:', error.stack);
+        db = null; // Явно устанавливаем null при ошибке
     }
 })();
 
 // API: Отправка текстового сообщения
 app.post('/api/support/sendMessage', async (req, res) => {
     try {
+        if (!db) {
+            return res.status(503).json({ error: 'База данных не инициализирована' });
+        }
+        
         const { supportToken, message } = req.body;
         
         if (!supportToken || !message) {
@@ -82,6 +98,10 @@ app.post('/api/support/sendMessage', async (req, res) => {
 // API: Отправка изображения
 app.post('/api/support/sendImage', upload.single('image'), async (req, res) => {
     try {
+        if (!db) {
+            return res.status(503).json({ error: 'База данных не инициализирована' });
+        }
+        
         const { supportToken } = req.body;
         const file = req.file;
 
@@ -111,6 +131,10 @@ app.post('/api/support/sendImage', upload.single('image'), async (req, res) => {
 // API: Получение всех сообщений
 app.post('/api/support/getMessages1', async (req, res) => {
     try {
+        if (!db) {
+            return res.status(503).json({ error: 'База данных не инициализирована' });
+        }
+        
         const { supportToken } = req.body;
         
         if (!supportToken) {
