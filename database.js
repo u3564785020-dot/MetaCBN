@@ -139,8 +139,16 @@ async function saveMessage(db, supportToken, message, image, messageFrom) {
             [supportToken, message, image, messageFromNum]
         );
         const saved = result.rows[0];
-        console.log(`✅ Сохранено в PostgreSQL: ID=${saved.id}, messageFrom=${saved.messageFrom}`);
-        return saved;
+        console.log(`✅ Сохранено в PostgreSQL: ID=${saved.id}, messageFrom=${saved.messagefrom || saved.messageFrom}`);
+        // Нормализуем имена колонок (PostgreSQL возвращает lowercase)
+        return {
+            id: saved.id,
+            supportToken: saved.supporttoken || saved.supportToken,
+            message: saved.message,
+            image: saved.image,
+            messageFrom: saved.messagefrom !== undefined ? saved.messagefrom : saved.messageFrom,
+            createdAt: saved.createdat || saved.createdAt
+        };
     } else {
         return new Promise((resolve, reject) => {
             const sql = `INSERT INTO messages (supportToken, message, image, messageFrom) VALUES (?, ?, ?, ?)`;
@@ -167,7 +175,8 @@ async function getMessages(db, supportToken) {
         );
         // Убеждаемся, что messageFrom всегда число (0 или 1)
         const normalized = result.rows.map(row => {
-            let messageFrom = row.messageFrom;
+            // PostgreSQL возвращает имена колонок в lowercase
+            let messageFrom = row.messagefrom !== undefined ? row.messagefrom : row.messageFrom;
             
             // Обработка NULL или undefined
             if (messageFrom === null || messageFrom === undefined) {
@@ -180,16 +189,25 @@ async function getMessages(db, supportToken) {
             const messageFromNum = parseInt(messageFrom, 10);
             if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
                 console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom для ID=${row.id}: ${messageFrom} (тип: ${typeof messageFrom})`);
-                // Исправляем некорректные данные
+                // Исправляем некорректные данные и нормализуем имена колонок
                 return {
-                    ...row,
-                    messageFrom: 1 // По умолчанию клиент
+                    id: row.id,
+                    supportToken: row.supporttoken || row.supportToken,
+                    message: row.message,
+                    image: row.image,
+                    messageFrom: 1, // По умолчанию клиент
+                    createdAt: row.createdat || row.createdAt
                 };
             }
             
+            // Нормализуем имена колонок (PostgreSQL возвращает lowercase)
             return {
-                ...row,
-                messageFrom: messageFromNum
+                id: row.id,
+                supportToken: row.supporttoken || row.supportToken,
+                message: row.message,
+                image: row.image,
+                messageFrom: messageFromNum,
+                createdAt: row.createdat || row.createdAt
             };
         });
         console.log(`📥 Получено из PostgreSQL для токена ${supportToken}: ${normalized.length} сообщений`);
@@ -222,14 +240,22 @@ async function getMessages(db, supportToken) {
                     if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
                         console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom для ID=${row.id}: ${messageFrom} (тип: ${typeof messageFrom})`);
                         return {
-                            ...row,
-                            messageFrom: 1 // По умолчанию клиент
+                            id: row.id,
+                            supportToken: row.supportToken,
+                            message: row.message,
+                            image: row.image,
+                            messageFrom: 1, // По умолчанию клиент
+                            createdAt: row.createdAt
                         };
                     }
                     
                     return {
-                        ...row,
-                        messageFrom: messageFromNum
+                        id: row.id,
+                        supportToken: row.supportToken,
+                        message: row.message,
+                        image: row.image,
+                        messageFrom: messageFromNum,
+                        createdAt: row.createdAt
                     };
                 });
                 console.log(`📥 Получено из SQLite для токена ${supportToken}: ${normalized.length} сообщений`);
@@ -251,7 +277,18 @@ async function getLastMessage(db, supportToken) {
             `SELECT * FROM messages WHERE supportToken = $1 ORDER BY createdAt DESC LIMIT 1`,
             [supportToken]
         );
-        return result.rows[0] || null;
+        const row = result.rows[0];
+        if (!row) return null;
+        
+        // Нормализуем имена колонок (PostgreSQL возвращает lowercase)
+        return {
+            id: row.id,
+            supportToken: row.supporttoken || row.supportToken,
+            message: row.message,
+            image: row.image,
+            messageFrom: row.messagefrom !== undefined ? row.messagefrom : row.messageFrom,
+            createdAt: row.createdat || row.createdAt
+        };
     } else {
         return new Promise((resolve, reject) => {
             const sql = `SELECT * FROM messages WHERE supportToken = ? ORDER BY createdAt DESC LIMIT 1`;
