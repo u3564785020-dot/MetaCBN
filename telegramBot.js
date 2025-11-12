@@ -71,9 +71,20 @@ class TelegramSupportBot {
                 
                 if (supportToken) {
                     try {
+                        console.log(`💾 Сохранение ответа оператора в БД. Токен: ${supportToken}, Сообщение: "${text}", messageFrom: 0`);
+                        
                         // Сохраняем ответ оператора в БД
                         const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
-                        console.log(`✅ Оператор ответил на чат ${supportToken}: "${text}". Сохранено в БД с ID: ${savedMessage.id}`);
+                        console.log(`✅ Оператор ответил на чат ${supportToken}: "${text}". Сохранено в БД с ID: ${savedMessage.id}, messageFrom: ${savedMessage.messageFrom || 0}`);
+                        
+                        // Проверяем, что сообщение действительно сохранилось
+                        const verifyMessages = await getMessages(this.db, supportToken);
+                        const lastMessage = verifyMessages[verifyMessages.length - 1];
+                        console.log(`🔍 Проверка: Последнее сообщение в БД для токена ${supportToken}:`, {
+                            id: lastMessage?.id,
+                            messageFrom: lastMessage?.messageFrom,
+                            message: lastMessage?.message?.substring(0, 50)
+                        });
                         
                         // Отправляем красивое подтверждение оператору
                         const escapedToken = this.escapeMarkdownV2(supportToken);
@@ -85,6 +96,7 @@ class TelegramSupportBot {
                         );
                     } catch (error) {
                         console.error(`❌ Ошибка сохранения ответа оператора:`, error);
+                        console.error(`Детали ошибки:`, error.stack);
                         const escapedToken = this.escapeMarkdownV2(supportToken);
                         const escapedError = this.escapeMarkdownV2(error.message);
                         await this.bot.sendMessage(chatId, 
@@ -120,7 +132,15 @@ class TelegramSupportBot {
             const supportToken = match[1];
             const replyText = match[2];
 
-            await saveMessage(this.db, supportToken, replyText, null, 0);
+            console.log(`💾 Команда /reply. Токен: ${supportToken}, Сообщение: "${replyText}", messageFrom: 0`);
+            
+            const savedMessage = await saveMessage(this.db, supportToken, replyText, null, 0);
+            console.log(`✅ Ответ через /reply сохранен в БД с ID: ${savedMessage.id}`);
+            
+            // Проверяем сохранение
+            const verifyMessages = await getMessages(this.db, supportToken);
+            console.log(`🔍 Проверка /reply: Всего сообщений для токена ${supportToken}: ${verifyMessages.length}`);
+            
             const escapedToken = this.escapeMarkdownV2(supportToken);
             await this.bot.sendMessage(chatId, 
                 `✅ *Ответ отправлен*\n\n` +
