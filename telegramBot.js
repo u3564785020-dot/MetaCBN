@@ -72,8 +72,6 @@ class TelegramSupportBot {
                 const chatId = String(msg.chat.id);
                 console.log(`🔍 [SMARTSUPP_KEY] Команда от пользователя ${chatId}`);
                 
-                // Проверяем ключ в файле для подтверждения
-                const verification = await smartsuppKeyManager.verifyKeyInFile();
                 const currentKey = await smartsuppKeyManager.getCurrentKey();
                 
                 if (!currentKey) {
@@ -88,25 +86,10 @@ class TelegramSupportBot {
                     return;
                 }
                 
-                // Формируем сообщение с проверкой
-                let verificationInfo = '';
-                if (verification.allMatch) {
-                    verificationInfo = `\n✅ **Проверка файлов:**\n` +
-                        `• HTML файл: \`${verification.htmlFile}\` ✓\n` +
-                        `• Сохраненный файл: \`${verification.savedFile}\` ✓\n` +
-                        `• Все значения совпадают ✓\n`;
-                } else {
-                    verificationInfo = `\n⚠️ **Проверка файлов:**\n` +
-                        `• HTML файл: \`${verification.htmlFile || 'не найден'}\`\n` +
-                        `• Сохраненный файл: \`${verification.savedFile || 'не найден'}\`\n` +
-                        `• В памяти: \`${verification.memory || 'не найден'}\`\n`;
-                }
-                
                 await this.bot.sendMessage(chatId,
                     `🔑 Текущий ключ Smartsupp:\n\n` +
-                    `\`${currentKey}\`\n` +
-                    verificationInfo +
-                    `\n💡 Для изменения используйте:\n` +
+                    `\`${currentKey}\`\n\n` +
+                    `💡 Для изменения используйте:\n` +
                     `\`/smartsupp_set <новый_ключ>\``,
                     { parse_mode: 'Markdown' }
                 );
@@ -140,33 +123,12 @@ class TelegramSupportBot {
                 }
                 
                 // Устанавливаем новый ключ
-                const result = await smartsuppKeyManager.setKey(newKey);
-                
-                // ПРОВЕРКА: Читаем файл и подтверждаем изменения
-                const verification = await smartsuppKeyManager.verifyKeyInFile();
-                
-                let verificationMessage = '';
-                if (verification.allMatch && verification.htmlFile === newKey) {
-                    verificationMessage = `\n✅ **Проверка пройдена:**\n` +
-                        `• Ключ в HTML файле: \`${verification.htmlFile}\`\n` +
-                        `• Ключ в сохраненном файле: \`${verification.savedFile}\`\n` +
-                        `• Все значения совпадают ✓\n`;
-                } else {
-                    verificationMessage = `\n⚠️ **Проверка:**\n` +
-                        `• HTML файл: \`${verification.htmlFile || 'не найден'}\`\n` +
-                        `• Сохраненный файл: \`${verification.savedFile || 'не найден'}\`\n` +
-                        `• В памяти: \`${verification.memory || 'не найден'}\`\n`;
-                }
+                await smartsuppKeyManager.setKey(newKey);
                 
                 await this.bot.sendMessage(chatId,
-                    `✅ Ключ Smartsupp успешно обновлен!\n\n` +
-                    `🔑 Новый ключ:\n` +
-                    `\`${newKey}\`\n\n` +
-                    `📝 Изменения применены:\n` +
-                    `• HTML файл обновлен\n` +
-                    `• Ключ сохранен в файл\n` +
-                    verificationMessage +
-                    `\n⚠️ Для применения изменений на сайте может потребоваться перезагрузка страницы`,
+                    `✅ Ключ обновлен!\n\n` +
+                    `🔑 Новый ключ: \`${newKey}\`\n\n` +
+                    `📝 Файл обновлен на сервере`,
                     { parse_mode: 'Markdown' }
                 );
                 
