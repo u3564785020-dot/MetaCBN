@@ -79,11 +79,25 @@ class TelegramSupportBot {
                 return;
             }
 
-            // Если сообщение от оператора (в личке с ботом)
-            if (chatId.toString() === this.operatorChatId.toString()) {
+            // КРИТИЧЕСКАЯ ПРОВЕРКА: сравниваем chatId
+            const chatIdStr = chatId.toString();
+            const operatorChatIdStr = this.operatorChatId.toString();
+            const isOperatorChat = chatIdStr === operatorChatIdStr;
+            
+            console.log(`🔍 СРАВНЕНИЕ ChatId:`);
+            console.log(`   Получен ChatId: "${chatIdStr}" (тип: ${typeof chatId})`);
+            console.log(`   Ожидаемый OperatorChatId: "${operatorChatIdStr}" (тип: ${typeof this.operatorChatId})`);
+            console.log(`   Совпадают: ${isOperatorChat}`);
+            console.log(`   Тип чата: ${chatId < 0 ? 'ГРУППА/СУПЕРГРУППА' : 'ЛИЧНЫЙ ЧАТ'}`);
+            
+            // Если сообщение от оператора (в личке с ботом или в группе)
+            if (isOperatorChat) {
                 let supportToken = null;
                 
-                console.log(`👨‍💼 Сообщение от оператора получено! Text: "${text}", Reply: ${!!msg.reply_to_message}, PendingReply: ${this.pendingReply || 'null'}`);
+                console.log(`👨‍💼 ✅✅✅ СООБЩЕНИЕ ОТ ОПЕРАТОРА ПОЛУЧЕНО! ✅✅✅`);
+                console.log(`   Text: "${text}"`);
+                console.log(`   Reply: ${!!msg.reply_to_message}`);
+                console.log(`   PendingReply: ${this.pendingReply || 'null'}`);
                 
                 // Проверяем reply на сообщение
                 if (msg.reply_to_message) {
@@ -159,6 +173,7 @@ class TelegramSupportBot {
                     console.error(`   Reply: ${!!msg.reply_to_message}`);
                     console.error(`   PendingReply: ${this.pendingReply || 'null'}`);
                     console.error(`   ActiveChats:`, Array.from(this.activeChats.keys()));
+                    console.error(`   ChatId: ${chatId}, OperatorChatId: ${this.operatorChatId}`);
                     
                     await this.bot.sendMessage(chatId, 
                         '❓ *Не понятно, кому отвечать*\n\n' +
