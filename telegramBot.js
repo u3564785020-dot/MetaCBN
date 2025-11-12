@@ -15,6 +15,28 @@ class TelegramSupportBot {
         // Создаем бота БЕЗ polling
         this.bot = new TelegramBot(token, { polling: false });
         
+        // Регистрируем обработчик ошибок polling ОДИН РАЗ
+        this.bot.on('polling_error', (error) => {
+            console.error('❌ Polling error:', error.message, error.code);
+            
+            // Если это конфликт (409) - останавливаем polling и перезапускаем через 10 секунд
+            if (error.code === 409 || error.message.includes('409')) {
+                console.warn('⚠️ Обнаружен конфликт polling (409). Остановка и перезапуск через 10 секунд...');
+                this.stopPolling().then(() => {
+                    setTimeout(() => {
+                        console.log('🔄 Перезапуск polling после конфликта...');
+                        this.startPolling();
+                    }, 10000);
+                }).catch(err => {
+                    console.error('❌ Ошибка остановки polling:', err);
+                    setTimeout(() => this.startPolling(), 10000);
+                });
+            } else {
+                // Для других ошибок - просто перезапускаем через 5 секунд
+                setTimeout(() => this.startPolling(), 5000);
+            }
+        });
+        
         // Регистрируем обработчики
         this.setupHandlers();
         
@@ -32,14 +54,37 @@ class TelegramSupportBot {
     async startPolling() {
         try {
             console.log('🔄 Запуск Telegram polling...');
+            
+            // Останавливаем старый polling если он запущен
+            try {
+                await this.stopPolling();
+            } catch (e) {
+                // Игнорируем ошибки остановки
+            }
+            
+            // Небольшая задержка перед запуском нового polling
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
             await this.bot.startPolling({
                 restart: true
             });
+            
             console.log('✅ Telegram polling запущен');
         } catch (error) {
             console.error('❌ Ошибка запуска polling:', error.message);
-            // Повторная попытка через 5 секунд
-            setTimeout(() => this.startPolling(), 5000);
+            // Повторная попытка через 10 секунд при ошибке
+            setTimeout(() => this.startPolling(), 10000);
+        }
+    }
+
+    async stopPolling() {
+        try {
+            if (this.bot && this.bot.stopPolling) {
+                await this.bot.stopPolling();
+                console.log('🛑 Polling остановлен');
+            }
+        } catch (error) {
+            // Игнорируем ошибки остановки
         }
     }
 
