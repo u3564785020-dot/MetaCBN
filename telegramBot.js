@@ -12,26 +12,25 @@ class TelegramSupportBot {
         this.activeChats = new Map();
         this.pendingReply = null;
         
-        // Создаем бота С polling сразу
-        this.bot = new TelegramBot(token, { polling: true });
+        // Создаем бота БЕЗ polling (запустим после регистрации обработчиков)
+        this.bot = new TelegramBot(token, { polling: false });
         
         // Регистрируем обработчик ошибок polling
         this.bot.on('polling_error', (error) => {
             console.error('❌ Polling error:', error.message, error.code);
             if (error.code === 409 || error.message.includes('409')) {
                 console.warn('⚠️ Конфликт polling (409). Перезапуск через 10 секунд...');
-                this.stopPolling().then(() => {
-                    setTimeout(() => this.startPolling(), 10000);
-                }).catch(() => {
-                    setTimeout(() => this.startPolling(), 10000);
-                });
+                setTimeout(() => this.startPolling(), 10000);
             } else {
                 setTimeout(() => this.startPolling(), 5000);
             }
         });
         
-        // Регистрируем обработчики
+        // Регистрируем обработчики ПЕРЕД запуском polling
         this.setupHandlers();
+        
+        // Запускаем polling ПОСЛЕ регистрации всех обработчиков
+        this.startPolling();
         
         // Проверяем подключение
         this.bot.getMe().then(botInfo => {
@@ -41,6 +40,18 @@ class TelegramSupportBot {
         });
     }
 
+    async startPolling() {
+        try {
+            console.log('🔄 Запуск Telegram polling...');
+            await this.bot.startPolling({
+                restart: true
+            });
+            console.log('✅ Telegram polling запущен');
+        } catch (error) {
+            console.error('❌ Ошибка запуска polling:', error.message);
+            setTimeout(() => this.startPolling(), 10000);
+        }
+    }
 
     setupHandlers() {
         console.log('🔧 Регистрация обработчиков...');
