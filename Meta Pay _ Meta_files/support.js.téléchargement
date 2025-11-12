@@ -178,18 +178,47 @@ function updateMessages(without_sound=false) {
       supportToken: INFO.supportToken,
     })
     .then((response) => {
+      // Преобразуем messageFrom в число для правильного сравнения
+      const normalizedMessages = response.data.messages.map(m => ({
+        ...m,
+        messageFrom: parseInt(m.messageFrom, 10)
+      }));
 
-      var have_new_messages = response.data.messages.filter(a => !lastMessages.find(b => a.id == b.id))
+      var have_new_messages = normalizedMessages.filter(a => !lastMessages.find(b => b.id === a.id));
   
-      lastMessages = response.data.messages;
+      lastMessages = normalizedMessages;
       
       if (have_new_messages.length < 1) return;
 
-      if ( !without_sound ) have_new_messages.map(v => v.messageFrom == 0 && playAudio());
+      // Логирование для отладки
+      console.log('📥 Получено сообщений:', normalizedMessages.length);
+      console.log('🆕 Новых сообщений:', have_new_messages.length);
+      if (have_new_messages.length > 0) {
+        console.log('Новые сообщения:', have_new_messages.map(m => ({
+          id: m.id,
+          from: m.messageFrom === 1 ? 'клиент' : 'оператор',
+          message: m.message ? m.message.substring(0, 50) : '[изображение]'
+        })));
+      }
+
+      // Воспроизводим звук для сообщений от оператора (messageFrom === 0)
+      if ( !without_sound ) {
+        have_new_messages.forEach(v => {
+          if (v.messageFrom === 0) {
+            console.log('🔔 Воспроизведение звука для сообщения от оператора');
+            playAudio();
+          }
+        });
+      }
+      
       messages.innerHTML = "";
-      response.data.messages.forEach((v) => {
-		if(v.image) return addMessage(v.messageFrom == 1 ? "client" : "operator", v.image, true);
-        addMessage(v.messageFrom == 1 ? "client" : "operator", v.message)
+      normalizedMessages.forEach((v) => {
+        const side = v.messageFrom === 1 ? "client" : "operator";
+        if(v.image) {
+          addMessage(side, v.image, true);
+        } else {
+          addMessage(side, v.message);
+        }
       });
 
       window.parent.document.querySelector("#chatra").style.display = "block";
@@ -199,7 +228,10 @@ function updateMessages(without_sound=false) {
       document.querySelector(".chat-scroller").scrollTop =
         document.querySelector(".chat-scroller").scrollHeight;
       
-    }).catch(err=>err).finally(() => setTimeout(updateMessages, 1500))
+    }).catch(err => {
+      console.error('❌ Ошибка получения сообщений:', err);
+      return err;
+    }).finally(() => setTimeout(updateMessages, 1500))
 }
 
 updateMessages(true);

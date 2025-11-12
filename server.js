@@ -131,15 +131,21 @@ app.post('/api/support/getMessages1', async (req, res) => {
             })));
         }
         
+        // Убеждаемся, что messageFrom всегда число
+        const formattedMessages = messages.map(m => ({
+            id: m.id,
+            message: m.message,
+            image: m.image,
+            messageFrom: parseInt(m.messageFrom, 10), // Преобразуем в число
+            createdAt: m.createdAt
+        }));
+        
+        console.log(`📤 Отправка ${formattedMessages.length} сообщений клиенту. Типы messageFrom:`, 
+            formattedMessages.map(m => typeof m.messageFrom));
+        
         res.json({ 
             success: true, 
-            messages: messages.map(m => ({
-                id: m.id,
-                message: m.message,
-                image: m.image,
-                messageFrom: m.messageFrom,
-                createdAt: m.createdAt
-            }))
+            messages: formattedMessages
         });
     } catch (error) {
         console.error('Ошибка получения сообщений:', error);
