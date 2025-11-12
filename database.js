@@ -28,19 +28,47 @@ async function initDatabase() {
                     supportToken TEXT NOT NULL,
                     message TEXT,
                     image TEXT,
-                    messageFrom INTEGER NOT NULL DEFAULT 1,
+                    messageFrom INTEGER DEFAULT 1,
                     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
             
-            // Исправляем существующие записи с NULL или некорректными значениями
-            await pgClient.query(`
+            console.log('Таблица messages создана');
+            
+            // Проверяем и добавляем constraint для messageFrom (если не существует)
+            try {
+                await pgClient.query(`
+                    ALTER TABLE messages 
+                    ALTER COLUMN messageFrom SET NOT NULL,
+                    ALTER COLUMN messageFrom SET DEFAULT 1
+                `);
+                console.log('Колонка messageFrom обновлена с NOT NULL constraint');
+            } catch (err) {
+                // Игнорируем ошибку, если constraint уже существует
+                console.log('Колонка messageFrom уже настроена');
+            }
+            
+            // ВАЖНО: Исправляем ВСЕ существующие записи с NULL или некорректными значениями
+            const updateResult = await pgClient.query(`
                 UPDATE messages 
                 SET messageFrom = 1 
                 WHERE messageFrom IS NULL OR messageFrom NOT IN (0, 1)
             `);
             
-            console.log('Таблица messages создана/проверена, исправлены некорректные записи');
+            console.log(`✅ Исправлено ${updateResult.rowCount} записей с некорректным messageFrom`);
+            
+            // Проверяем, остались ли NULL значения
+            const nullCheck = await pgClient.query(`
+                SELECT COUNT(*) as count FROM messages WHERE messageFrom IS NULL
+            `);
+            
+            if (nullCheck.rows[0].count > 0) {
+                console.error(`❌ ВНИМАНИЕ: В БД еще есть ${nullCheck.rows[0].count} записей с messageFrom = NULL!`);
+            } else {
+                console.log('✅ Все записи имеют корректный messageFrom');
+            }
+            
+            console.log('Таблица messages проверена и исправлена');
             return pgClient;
         } catch (err) {
             console.error('Ошибка подключения к PostgreSQL:', err.message);
