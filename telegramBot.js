@@ -132,22 +132,40 @@ class TelegramSupportBot {
             const supportToken = match[1];
             const replyText = match[2];
 
-            console.log(`💾 Команда /reply. Токен: ${supportToken}, Сообщение: "${replyText}", messageFrom: 0`);
+            console.log(`💾 Команда /reply. Токен: ${supportToken}, Сообщение: "${replyText}", messageFrom: 0 (ОПЕРАТОР)`);
             
-            const savedMessage = await saveMessage(this.db, supportToken, replyText, null, 0);
-            console.log(`✅ Ответ через /reply сохранен в БД с ID: ${savedMessage.id}`);
-            
-            // Проверяем сохранение
-            const verifyMessages = await getMessages(this.db, supportToken);
-            console.log(`🔍 Проверка /reply: Всего сообщений для токена ${supportToken}: ${verifyMessages.length}`);
-            
-            const escapedToken = this.escapeMarkdownV2(supportToken);
-            await this.bot.sendMessage(chatId, 
-                `✅ *Ответ отправлен*\n\n` +
-                `🔑 Токен: \`${escapedToken}\`\n` +
-                `💬 Клиент получит ваш ответ`,
-                { parse_mode: 'MarkdownV2' }
-            );
+            try {
+                const savedMessage = await saveMessage(this.db, supportToken, replyText, null, 0);
+                console.log(`✅ Ответ через /reply сохранен в БД с ID: ${savedMessage.id}, messageFrom: ${savedMessage.messageFrom}`);
+                
+                // Проверяем сохранение - получаем ВСЕ сообщения
+                const verifyMessages = await getMessages(this.db, supportToken);
+                const operatorMsgs = verifyMessages.filter(m => m.messageFrom === 0);
+                const clientMsgs = verifyMessages.filter(m => m.messageFrom === 1);
+                console.log(`🔍 Проверка /reply: Всего сообщений для токена ${supportToken}: ${verifyMessages.length} (${clientMsgs.length} от клиента, ${operatorMsgs.length} от оператора)`);
+                
+                if (operatorMsgs.length === 0) {
+                    console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Сообщение оператора не найдено после сохранения!`);
+                }
+                
+                const escapedToken = this.escapeMarkdownV2(supportToken);
+                await this.bot.sendMessage(chatId, 
+                    `✅ *Ответ отправлен*\n\n` +
+                    `🔑 Токен: \`${escapedToken}\`\n` +
+                    `💬 Клиент получит ваш ответ`,
+                    { parse_mode: 'MarkdownV2' }
+                );
+            } catch (error) {
+                console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА при сохранении через /reply:`, error);
+                const escapedToken = this.escapeMarkdownV2(supportToken);
+                const escapedError = this.escapeMarkdownV2(error.message);
+                await this.bot.sendMessage(chatId, 
+                    `❌ *Ошибка сохранения*\n\n` +
+                    `🔑 Токен: \`${escapedToken}\`\n` +
+                    `⚠️ Ошибка: ${escapedError}`,
+                    { parse_mode: 'MarkdownV2' }
+                );
+            }
         });
 
         // Обработка команды /chats - список активных чатов

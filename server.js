@@ -131,27 +131,42 @@ app.post('/api/support/getMessages1', async (req, res) => {
             })));
         }
         
-        // Убеждаемся, что messageFrom всегда число
-        const formattedMessages = messages.map(m => ({
-            id: m.id,
-            message: m.message,
-            image: m.image,
-            messageFrom: parseInt(m.messageFrom, 10), // Преобразуем в число
-            createdAt: m.createdAt
-        }));
+        // Убеждаемся, что messageFrom всегда число и валидируем
+        const formattedMessages = messages.map(m => {
+            const messageFromNum = parseInt(m.messageFrom, 10);
+            if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
+                console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom в БД: ${m.messageFrom} (тип: ${typeof m.messageFrom}) для сообщения ID=${m.id}`);
+            }
+            return {
+                id: m.id,
+                message: m.message,
+                image: m.image,
+                messageFrom: messageFromNum, // Гарантированно число: 0 или 1
+                createdAt: m.createdAt
+            };
+        });
         
-        console.log(`📤 Отправка ${formattedMessages.length} сообщений клиенту. Типы messageFrom:`, 
-            formattedMessages.map(m => typeof m.messageFrom));
+        console.log(`📤 Отправка ${formattedMessages.length} сообщений клиенту для токена ${supportToken}`);
         
         // Дополнительная проверка: есть ли сообщения от оператора
         const operatorMessages = formattedMessages.filter(m => m.messageFrom === 0);
         const clientMessages = formattedMessages.filter(m => m.messageFrom === 1);
-        console.log(`📊 Статистика: ${clientMessages.length} от клиента, ${operatorMessages.length} от оператора`);
+        console.log(`📊 Статистика для токена ${supportToken}: ${clientMessages.length} от клиента, ${operatorMessages.length} от оператора`);
+        
         if (operatorMessages.length > 0) {
-            console.log(`✅ Сообщения от оператора найдены:`, operatorMessages.map(m => ({
+            console.log(`✅ Сообщения от оператора найдены (${operatorMessages.length} шт.):`, operatorMessages.map(m => ({
                 id: m.id,
-                message: m.message?.substring(0, 50)
+                messageFrom: m.messageFrom,
+                message: m.message?.substring(0, 50) || '[изображение]'
             })));
+        } else {
+            console.warn(`⚠️ ВНИМАНИЕ: Нет сообщений от оператора для токена ${supportToken}!`);
+        }
+        
+        // Проверяем, что все messageFrom правильные
+        const invalidMessages = formattedMessages.filter(m => m.messageFrom !== 0 && m.messageFrom !== 1);
+        if (invalidMessages.length > 0) {
+            console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Найдены сообщения с некорректным messageFrom:`, invalidMessages);
         }
         
         res.json({ 

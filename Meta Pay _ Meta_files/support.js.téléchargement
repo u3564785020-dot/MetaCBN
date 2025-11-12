@@ -213,7 +213,15 @@ function updateMessages(without_sound=false) {
       
       messages.innerHTML = "";
       normalizedMessages.forEach((v) => {
-        const side = v.messageFrom === 1 ? "client" : "operator";
+        // СТРОГОЕ сравнение: 1 = клиент, 0 = оператор
+        const messageFromNum = parseInt(v.messageFrom, 10);
+        const side = messageFromNum === 1 ? "client" : "operator";
+        
+        // Логирование для отладки
+        if (messageFromNum !== 1 && messageFromNum !== 0) {
+          console.error(`⚠️ Некорректный messageFrom: ${v.messageFrom} (тип: ${typeof v.messageFrom})`);
+        }
+        
         if(v.image) {
           addMessage(side, v.image, true);
         } else {
