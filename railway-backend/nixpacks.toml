@@ -1,0 +1,15 @@
+# Конфигурация Nixpacks для Railway
+# Railway автоматически использует Nixpacks, но можно настроить вручную
+
+[phases.setup]
+nixPkgs = ["nodejs_18", "postgresql"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build || true"]
+
+[start]
+cmd = "node server.js"
+
