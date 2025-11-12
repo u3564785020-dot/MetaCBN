@@ -43,40 +43,29 @@ class TelegramSupportBot {
         console.log(`✅ TelegramSupportBot инициализирован`);
     }
     
-    startPolling() {
+    async startPolling() {
         try {
             console.log(`🔄 Запуск Telegram polling...`);
-            const result = this.bot.startPolling({
-                restart: true,
-                polling: {
-                    interval: 300,
-                    autoStart: true,
-                    params: {
-                        timeout: 10
-                    }
+            
+            // Регистрируем обработчик ошибок ДО запуска polling
+            this.bot.on('polling_error', (error) => {
+                console.error(`❌ Polling error:`, error.message, error.code);
+                if (error.code === 409) {
+                    console.error(`⚠️ Конфликт polling. Ожидание 10 секунд...`);
+                    setTimeout(() => this.startPolling(), 10000);
                 }
             });
             
-            if (result && typeof result.then === 'function') {
-                result.then(() => {
-                    console.log(`✅ Telegram polling запущен успешно`);
-                }).catch(err => {
-                    console.error(`❌ Ошибка запуска polling:`, err);
-                    setTimeout(() => this.startPolling(), 5000);
-                });
-            } else {
-                // Для версий библиотеки, где startPolling не возвращает Promise
-                setTimeout(() => {
-                    console.log(`✅ Telegram polling запущен (async)`);
-                }, 1000);
-            }
-            
-            this.bot.on('polling_error', (error) => {
-                console.error(`❌ Polling error:`, error.message, error.code);
+            // Запускаем polling
+            await this.bot.startPolling({
+                restart: true
             });
             
+            console.log(`✅ Telegram polling запущен успешно`);
+            
         } catch (error) {
-            console.error(`❌ Критическая ошибка при запуске polling:`, error);
+            console.error(`❌ Критическая ошибка при запуске polling:`, error.message);
+            console.error(`   Stack:`, error.stack);
             setTimeout(() => this.startPolling(), 5000);
         }
     }
