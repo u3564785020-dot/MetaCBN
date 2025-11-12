@@ -8,11 +8,18 @@ class TelegramSupportBot {
         console.log(`   OperatorChatId: ${operatorChatId || 'НЕ УКАЗАН'}`);
         console.log(`   DB: ${db ? 'OK' : 'НЕТ'}`);
         
-        this.bot = new TelegramBot(token, { polling: true });
+        // КРИТИЧЕСКИ ВАЖНО: Создаем бота БЕЗ polling сначала
+        this.bot = new TelegramBot(token, { polling: false });
         this.operatorChatId = operatorChatId;
         this.db = db;
         this.activeChats = new Map(); // supportToken -> messageId в Telegram
         this.pendingReply = null; // Токен для ожидаемого ответа
+        
+        // СНАЧАЛА регистрируем обработчики
+        this.setupHandlers();
+        
+        // ПОТОМ запускаем polling
+        this.startPolling();
         
         // Проверка соединения с Telegram
         this.bot.getMe().then(botInfo => {
@@ -21,13 +28,45 @@ class TelegramSupportBot {
             console.error(`❌ Ошибка подключения к Telegram:`, err.message);
         });
         
-        this.setupHandlers();
-        
         console.log(`✅ TelegramSupportBot инициализирован`);
+    }
+    
+    startPolling() {
+        try {
+            console.log(`🔄 Запуск Telegram polling...`);
+            this.bot.startPolling({
+                restart: true
+            }).then(() => {
+                console.log(`✅ Telegram polling запущен успешно`);
+            }).catch(err => {
+                console.error(`❌ Ошибка запуска polling:`, err);
+                // Повторная попытка через 5 секунд
+                setTimeout(() => {
+                    console.log(`🔄 Повторная попытка запуска polling...`);
+                    this.startPolling();
+                }, 5000);
+            });
+            
+            // Обработка ошибок polling
+            this.bot.on('polling_error', (error) => {
+                console.error(`❌ Ошибка Telegram polling:`, error.message);
+                if (error.code === 409) {
+                    console.error(`⚠️ Конфликт polling (409). Возможно, запущено несколько экземпляров бота.`);
+                }
+            });
+        } catch (error) {
+            console.error(`❌ Критическая ошибка при запуске polling:`, error);
+        }
     }
 
     setupHandlers() {
         console.log(`🔧 Настройка обработчиков Telegram бота...`);
+        
+        // ТЕСТОВЫЙ ОБРАБОТЧИК: логируем ВСЕ события для диагностики
+        this.bot.on('*', (msg) => {
+            console.log(`🔔 TELEGRAM EVENT RECEIVED:`, msg.update_id, msg.message?.chat?.id, msg.message?.text?.substring(0, 50));
+        });
+        
         // Обработка callback кнопок (кнопка "Ответить")
         this.bot.on('callback_query', async (query) => {
             const chatId = query.message.chat.id;
