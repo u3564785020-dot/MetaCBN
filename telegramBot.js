@@ -1,5 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { saveMessage, getMessages } = require('./database');
+const { saveMessage } = require('./database');
 
 class TelegramSupportBot {
     constructor(token, operatorChatId, db) {
@@ -12,10 +12,16 @@ class TelegramSupportBot {
         this.activeChats = new Map();
         this.pendingReply = null;
         
-        this.bot = new TelegramBot(token, { polling: true });
+        // Создаем бота БЕЗ polling
+        this.bot = new TelegramBot(token, { polling: false });
         
+        // Регистрируем обработчики
         this.setupHandlers();
         
+        // Запускаем polling ПОСЛЕ регистрации всех обработчиков
+        this.startPolling();
+        
+        // Проверяем подключение
         this.bot.getMe().then(botInfo => {
             console.log(`✅ Telegram бот подключен: @${botInfo.username}`);
         }).catch(err => {
@@ -23,7 +29,22 @@ class TelegramSupportBot {
         });
     }
 
+    async startPolling() {
+        try {
+            console.log('🔄 Запуск Telegram polling...');
+            await this.bot.startPolling({
+                restart: true
+            });
+            console.log('✅ Telegram polling запущен');
+        } catch (error) {
+            console.error('❌ Ошибка запуска polling:', error.message);
+            // Повторная попытка через 5 секунд
+            setTimeout(() => this.startPolling(), 5000);
+        }
+    }
+
     setupHandlers() {
+        // 1. Обработчик callback_query (кнопка "Ответить")
         this.bot.on('callback_query', async (query) => {
             try {
                 const chatId = String(query.message.chat.id);
@@ -40,46 +61,80 @@ class TelegramSupportBot {
                     );
                 }
             } catch (error) {
-                console.error('Ошибка callback_query:', error);
+                console.error('❌ Ошибка callback_query:', error);
             }
         });
 
+        // 2. Обработчик ВСЕХ сообщений (регистрируется ПЕРВЫМ, до onText)
         this.bot.on('message', async (msg) => {
             try {
                 const chatId = String(msg.chat?.id);
-                if (chatId !== this.operatorChatId) return;
                 
-                const text = msg.text || msg.caption;
-                if (!text || text.startsWith('/')) return;
+                // Логируем ВСЕ входящие сообщения
+                console.log(`📨 Получено сообщение: chatId=${chatId}, operatorChatId=${this.operatorChatId}, text="${msg.text?.substring(0, 50) || msg.caption?.substring(0, 50) || 'нет текста'}"`);
                 
-                let supportToken = null;
-                
-                if (msg.reply_to_message) {
-                    supportToken = this.findActiveChatByReply(msg);
+                // Проверяем, что это сообщение от оператора
+                if (chatId !== this.operatorChatId) {
+                    return;
                 }
                 
+                const text = msg.text || msg.caption;
+                
+                // Пропускаем команды (их обработает onText)
+                if (text && text.startsWith('/')) {
+                    return;
+                }
+                
+                // Пропускаем сообщения без текста
+                if (!text) {
+                    return;
+                }
+                
+                console.log(`✅ Обработка сообщения от оператора: "${text.substring(0, 50)}"`);
+                
+                // Ищем токен поддержки
+                let supportToken = null;
+                
+                // Способ 1: через reply
+                if (msg.reply_to_message) {
+                    supportToken = this.findActiveChatByReply(msg);
+                    if (supportToken) {
+                        console.log(`🔑 Токен найден через reply: ${supportToken}`);
+                    }
+                }
+                
+                // Способ 2: через pendingReply (кнопка "Ответить")
                 if (!supportToken && this.pendingReply) {
                     supportToken = this.pendingReply;
                     this.pendingReply = null;
+                    console.log(`🔑 Токен найден через pendingReply: ${supportToken}`);
                 }
                 
+                // Сохраняем сообщение оператора
                 if (supportToken) {
-                    const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
-                    console.log(`✅ Сохранено сообщение оператора: ID=${savedMessage.id}, messageFrom=${savedMessage.messageFrom}`);
-                    
-                    await this.bot.sendMessage(chatId, 
-                        `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
-                    );
+                    try {
+                        const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
+                        console.log(`✅ Сообщение оператора сохранено: ID=${savedMessage.id}, токен=${supportToken}, messageFrom=${savedMessage.messageFrom}`);
+                        
+                        await this.bot.sendMessage(chatId, 
+                            `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
+                        );
+                    } catch (error) {
+                        console.error('❌ Ошибка сохранения сообщения оператора:', error);
+                        await this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+                    }
                 } else {
+                    console.warn(`⚠️ Не найден токен для сообщения от оператора`);
                     await this.bot.sendMessage(chatId, 
                         '❓ Не понятно, кому отвечать\n\n📋 Для ответа клиенту:\n\n1️⃣ Нажмите кнопку "💬 Ответить" под сообщением клиента\n2️⃣ Или ответьте на сообщение клиента (reply)\n3️⃣ Или используйте команду:\n/reply <токен> <сообщение>'
                     );
                 }
             } catch (error) {
-                console.error('Ошибка обработки сообщения:', error);
+                console.error('❌ Ошибка обработки сообщения:', error);
             }
         });
 
+        // 3. Команда /reply
         this.bot.onText(/\/reply (.+) (.+)/, async (msg, match) => {
             try {
                 const chatId = String(msg.chat.id);
@@ -88,6 +143,8 @@ class TelegramSupportBot {
                 const supportToken = match[1];
                 const replyText = match[2];
                 
+                console.log(`📝 Команда /reply: токен=${supportToken}, сообщение="${replyText.substring(0, 50)}"`);
+                
                 const savedMessage = await saveMessage(this.db, supportToken, replyText, null, 0);
                 console.log(`✅ Ответ через /reply сохранен: ID=${savedMessage.id}, messageFrom=${savedMessage.messageFrom}`);
                 
@@ -95,11 +152,12 @@ class TelegramSupportBot {
                     `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
                 );
             } catch (error) {
-                console.error('Ошибка /reply:', error);
+                console.error('❌ Ошибка /reply:', error);
                 await this.bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
             }
         });
 
+        // 4. Команда /chats
         this.bot.onText(/\/chats/, async (msg) => {
             try {
                 const chatId = String(msg.chat.id);
@@ -111,16 +169,18 @@ class TelegramSupportBot {
                 
                 await this.bot.sendMessage(chatId, `📋 Активные чаты:\n\n${activeChatsList}`);
             } catch (error) {
-                console.error('Ошибка /chats:', error);
+                console.error('❌ Ошибка /chats:', error);
             }
         });
 
+        // 5. Команда /history
         this.bot.onText(/\/history (.+)/, async (msg, match) => {
             try {
                 const chatId = String(msg.chat.id);
                 if (chatId !== this.operatorChatId) return;
                 
                 const supportToken = match[1];
+                const { getMessages } = require('./database');
                 const messages = await getMessages(this.db, supportToken);
                 
                 if (messages.length === 0) {
@@ -147,7 +207,7 @@ class TelegramSupportBot {
                     await this.bot.sendMessage(chatId, history);
                 }
             } catch (error) {
-                console.error('Ошибка /history:', error);
+                console.error('❌ Ошибка /history:', error);
             }
         });
     }
@@ -208,7 +268,8 @@ class TelegramSupportBot {
             this.activeChats.set(supportToken, sentMsg.message_id);
             console.log(`✅ Сообщение отправлено оператору: токен=${supportToken}, message_id=${sentMsg.message_id}`);
         } catch (error) {
-            console.error('Ошибка отправки в Telegram:', error.message);
+            console.error('❌ Ошибка отправки в Telegram:', error.message);
+            // Fallback без Markdown
             try {
                 let telegramMessage = `🔔 НОВОЕ СООБЩЕНИЕ ОТ КЛИЕНТА\n\n`;
                 telegramMessage += `🔑 Токен: ${supportToken}\n`;
@@ -235,7 +296,7 @@ class TelegramSupportBot {
                 
                 this.activeChats.set(supportToken, sentMsg.message_id);
             } catch (fallbackError) {
-                console.error('Ошибка fallback отправки:', fallbackError.message);
+                console.error('❌ Ошибка fallback отправки:', fallbackError.message);
             }
         }
     }
@@ -245,18 +306,23 @@ class TelegramSupportBot {
         
         const repliedMessageId = msg.reply_to_message.message_id;
         
+        // Ищем по message_id в activeChats
         for (const [token, messageId] of this.activeChats.entries()) {
             if (messageId === repliedMessageId) {
+                console.log(`🔑 Токен найден по message_id: ${token}`);
                 return token;
             }
         }
         
+        // Ищем токен в тексте сообщения
         if (msg.reply_to_message.text || msg.reply_to_message.caption) {
             const text = msg.reply_to_message.text || msg.reply_to_message.caption;
-            const tokenMatch = text.match(/Токен[:\s]*`?([a-zA-Z0-9]+)`?/i) || text.match(/🔑[:\s]*`?([a-zA-Z0-9]+)`?/i);
+            const tokenMatch = text.match(/Токен[:\s]*`?([a-zA-Z0-9]+)`?/i) || 
+                              text.match(/🔑[:\s]*`?([a-zA-Z0-9]+)`?/i);
             if (tokenMatch && tokenMatch[1]) {
                 const token = tokenMatch[1];
                 this.activeChats.set(token, repliedMessageId);
+                console.log(`🔑 Токен найден в тексте: ${token}`);
                 return token;
             }
         }
