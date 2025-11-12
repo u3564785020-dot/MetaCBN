@@ -1,0 +1,206 @@
+const messages = document.getElementById("chat-messages"),
+  input = document.querySelector("#chat-input-text");
+
+var lastMessages = [];
+document.querySelector("#send_message_form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendMessage();
+});
+document.querySelector("#chat-input-text").addEventListener("keypress", (e) => {
+  if (e.keyCode == 13) {
+    e.preventDefault();
+    return sendMessage();
+  }
+});
+let imageFile = document.getElementById("image-file");
+function sendImage(){
+  imageFile.focus()
+  imageFile.click();
+}
+function linkify(text) {
+  const urlPattern = /(https?:\/\/[^\s]+)/g;
+  return text.replace(urlPattern, url => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  });
+}
+imageFile.addEventListener("change", async (e) => {
+  if (!imageFile.files.length) return;
+  let file = imageFile.files[0];
+  let reader = new FileReader();
+  reader.onload = function(event) {
+    let img = new Image();
+    img.onload = function() {
+      // Сжимаем до ширины 1024px для примера
+      let MAX_WIDTH = 1024;
+      let scale = MAX_WIDTH / img.width;
+      let canvas = document.createElement('canvas');
+      canvas.width = MAX_WIDTH;
+      canvas.height = img.height * scale;
+      let ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(async (blob) => {
+        let formData = new FormData();
+        formData.append("supportToken", INFO.supportToken);
+        formData.append("image", blob, "screenshot.jpg");
+        await axios.post("/api/support/sendImage", formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        addMessage("client", "Изображение отправлено", true);
+      }, 'image/jpeg', 0.8);
+    };
+    img.onerror = function() {
+      alert('Не удалось прочитать изображение!');
+    };
+    img.src = event.target.result;
+  };
+  reader.onerror = function() {
+    alert('Ошибка чтения файла!');
+  };
+  reader.readAsDataURL(file);
+});
+function convertToJpeg(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(blob => {
+        resolve(blob);
+      }, 'image/jpeg', 0.92); // JPEG, качество 92%
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+async function sendNImage(file){
+  let mime = file.type || "";
+
+  // Если файл не PNG/JPEG/GIF — преобразуем в JPEG
+  if (!/^image\/(png|jpeg|jpg|gif)$/i.test(mime) || mime === "") {
+    try {
+      file = await convertToJpeg(file);
+    } catch (err) {
+      alert('Не удалось преобразовать изображение');
+      console.error(err);
+      return;
+    }
+  }
+
+  let formData = new FormData();
+  formData.append("supportToken", INFO.supportToken);
+  formData.append("image", file);
+
+  imageFile.value = "";
+  addMessage("client", "Загружаю...", true);
+
+  try {
+    await axios.post("/api/support/sendImage", formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  } catch (err) {
+    alert('Ошибка отправки изображения');
+    console.error(err);
+  }
+}
+function getBase64(file) {
+ return new Promise((res, rej) => {
+   var reader = new FileReader();
+   reader.readAsDataURL(file);
+   reader.onload = function () {
+     res(reader.result);
+   };
+   reader.onerror = function (error) {
+     rej(error);
+   };
+  });
+}
+function addMessage(side, message, image) {
+  let inn = image ? '<img class="image-message" src="' + message + '"/>' : linkify(message);
+  if(image){
+    inn = '<img class="image-message" src="' + message + '"/>';
+  }
+  messages.innerHTML +=
+    '<div class="chat-message is-' +
+    side +
+    '">' +
+    '<div class="chat-message__content">' +
+    '<div class="chat-message__bubble-wrapper">' +
+    '<div class="chat-message__bubble chat-bubble chat-bubble--' +
+    side +
+    ' js-message-bubble js-open-chat">' +
+    '<div class="chat-bubble__inner">' +
+    '<div class="chat-bubble__message">' +
+    '<span class="chat-bubble__message-text parsed-text parsed-text--message parsed-text' +
+    (side == "client" ? "--dark-bg" : "--very-light-bg") +
+    '">' +
+    inn +
+    "</span>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>";
+}
+
+function sendMessage() {
+  var message = input.value.replace(/\s+/g, " ").trim();
+  if (message.length < 1) return;
+  addMessage("client", message);
+  axios.post("/api/support/sendMessage", {
+    supportToken: INFO.supportToken,
+    message,
+  });
+
+  document.querySelector(".chat-scroller").scrollTop =
+    document.querySelector(".chat-scroller").scrollHeight;
+  input.value = "";
+}
+
+function playAudio(){
+    const audio = new Audio();
+    audio.src = "/audio/new_message.mp3";
+    audio.autoplay = true;
+    audio.play();
+    audio.onended = function (){
+        audio.pause();
+        delete audio;
+    }
+}
+
+function updateMessages(without_sound=false) {
+  axios
+    .post("/api/support/getMessages1", {
+      supportToken: INFO.supportToken,
+    })
+    .then((response) => {
+
+      var have_new_messages = response.data.messages.filter(a => !lastMessages.find(b => a.id == b.id))
+  
+      lastMessages = response.data.messages;
+      
+      if (have_new_messages.length < 1) return;
+
+      if ( !without_sound ) have_new_messages.map(v => v.messageFrom == 0 && playAudio());
+      messages.innerHTML = "";
+      response.data.messages.forEach((v) => {
+		if(v.image) return addMessage(v.messageFrom == 1 ? "client" : "operator", v.image, true);
+        addMessage(v.messageFrom == 1 ? "client" : "operator", v.message)
+      });
+
+      window.parent.document.querySelector("#chatra").style.display = "block";
+      window.parent.document.querySelector(".support-circle").style.display = "none";
+
+      
+      document.querySelector(".chat-scroller").scrollTop =
+        document.querySelector(".chat-scroller").scrollHeight;
+      
+    }).catch(err=>err).finally(() => setTimeout(updateMessages, 1500))
+}
+
+updateMessages(true);
+document.documentElement.style.cssText="filter:hue-rotate(1.48deg)";
