@@ -45,8 +45,122 @@ class TelegramSupportBot {
     setupHandlers() {
         console.log('🔧 Регистрация обработчиков...');
         
-        // КРИТИЧЕСКИ ВАЖНО: on('message') должен быть ПЕРВЫМ!
-        // 1. Обработчик ВСЕХ сообщений (регистрируется ПЕРВЫМ!)
+        // Сначала регистрируем команды (onText), чтобы они обрабатывались первыми
+        // 1. Команда /start - приветствие (регистрируется ПЕРВОЙ!)
+        this.bot.onText(/\/start/, async (msg) => {
+            try {
+                const chatId = String(msg.chat.id);
+                console.log(`🔍 [START] Команда /start от пользователя ${chatId}`);
+                
+                await this.bot.sendMessage(chatId,
+                    `👋 Привет! Я бот технической поддержки.\n\n` +
+                    `📋 Доступные команды:\n` +
+                    `• /smartsupp_key - показать текущий ключ Smartsupp\n` +
+                    `• /smartsupp_set <ключ> - установить новый ключ Smartsupp\n` +
+                    `• /chats - список активных чатов\n` +
+                    `• /history <токен> - история чата\n` +
+                    `• /reply <токен> <сообщение> - ответить клиенту\n\n` +
+                    `💡 Для управления ключом Smartsupp используйте:\n` +
+                    `\`/smartsupp_key\` - посмотреть текущий ключ\n` +
+                    `\`/smartsupp_set <ключ>\` - установить новый ключ`,
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (error) {
+                console.error('❌ Ошибка /start:', error);
+                try {
+                    await this.bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
+                } catch (e) {
+                    console.error('❌ Не удалось отправить сообщение об ошибке:', e);
+                }
+            }
+        });
+        
+        // 2. Команда /smartsupp_key
+        this.bot.onText(/\/smartsupp_key/, async (msg) => {
+            try {
+                const chatId = String(msg.chat.id);
+                console.log(`🔍 [SMARTSUPP_KEY] Команда от пользователя ${chatId}`);
+                
+                const currentKey = await smartsuppKeyManager.getCurrentKey();
+                
+                if (!currentKey) {
+                    await this.bot.sendMessage(chatId, 
+                        '⚠️ Ключ Smartsupp не найден\n\n' +
+                        'Используйте команду:\n' +
+                        '`/smartsupp_set <ключ>`\n\n' +
+                        'Пример:\n' +
+                        '`/smartsupp_set 8aa708c7d733a8fe8147c37aa98694304133cca5`',
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+                
+                await this.bot.sendMessage(chatId,
+                    `🔑 Текущий ключ Smartsupp:\n\n` +
+                    `\`${currentKey}\`\n\n` +
+                    `💡 Для изменения используйте:\n` +
+                    `\`/smartsupp_set <новый_ключ>\``,
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (error) {
+                console.error('❌ Ошибка /smartsupp_key:', error);
+                try {
+                    await this.bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
+                } catch (e) {
+                    console.error('❌ Не удалось отправить сообщение об ошибке:', e);
+                }
+            }
+        });
+
+        // 3. Команда /smartsupp_set
+        this.bot.onText(/\/smartsupp_set (.+)/, async (msg, match) => {
+            try {
+                const chatId = String(msg.chat.id);
+                console.log(`🔍 [SMARTSUPP_SET] Команда от пользователя ${chatId}`);
+                
+                const newKey = match[1].trim();
+                
+                if (!newKey || newKey.length < 10) {
+                    await this.bot.sendMessage(chatId,
+                        '❌ Ошибка: ключ слишком короткий\n\n' +
+                        'Минимальная длина ключа: 10 символов\n\n' +
+                        'Пример:\n' +
+                        '`/smartsupp_set 8aa708c7d733a8fe8147c37aa98694304133cca5`',
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+                
+                // Устанавливаем новый ключ
+                await smartsuppKeyManager.setKey(newKey);
+                
+                await this.bot.sendMessage(chatId,
+                    `✅ Ключ Smartsupp успешно обновлен!\n\n` +
+                    `🔑 Новый ключ:\n` +
+                    `\`${newKey}\`\n\n` +
+                    `📝 Изменения применены:\n` +
+                    `• HTML файл обновлен\n` +
+                    `• Ключ сохранен в файл\n\n` +
+                    `⚠️ Для применения изменений на сайте может потребоваться перезагрузка страницы`,
+                    { parse_mode: 'Markdown' }
+                );
+                
+                console.log(`✅ [SMARTSUPP KEY] Ключ обновлен через Telegram бота пользователем ${msg.from?.username || msg.from?.id}`);
+            } catch (error) {
+                console.error('❌ Ошибка /smartsupp_set:', error);
+                try {
+                    await this.bot.sendMessage(msg.chat.id, 
+                        `❌ Ошибка обновления ключа:\n\n\`${error.message}\``,
+                        { parse_mode: 'Markdown' }
+                    );
+                } catch (e) {
+                    console.error('❌ Не удалось отправить сообщение об ошибке:', e);
+                }
+            }
+        });
+        
+        // КРИТИЧЕСКИ ВАЖНО: on('message') должен быть ПОСЛЕ onText!
+        // 4. Обработчик ВСЕХ сообщений (регистрируется ПОСЛЕ команд!)
         this.bot.on('message', async (msg) => {
             try {
                 const chatId = String(msg.chat?.id);
@@ -56,6 +170,7 @@ class TelegramSupportBot {
                 
                 // Пропускаем команды (их обработает onText)
                 if (text && text.startsWith('/')) {
+                    console.log(`🔍 [MSG] Пропуск: команда "${text}"`);
                     return;
                 }
                 
@@ -218,80 +333,6 @@ class TelegramSupportBot {
                 }
             } catch (error) {
                 console.error('❌ Ошибка /history:', error);
-            }
-        });
-
-        // 6. Команда /smartsupp_key - показать текущий ключ
-        this.bot.onText(/\/smartsupp_key/, async (msg) => {
-            try {
-                const chatId = String(msg.chat.id);
-                
-                const currentKey = await smartsuppKeyManager.getCurrentKey();
-                
-                if (!currentKey) {
-                    await this.bot.sendMessage(chatId, 
-                        '⚠️ Ключ Smartsupp не найден\n\n' +
-                        'Используйте команду:\n' +
-                        '`/smartsupp_set <ключ>`\n\n' +
-                        'Пример:\n' +
-                        '`/smartsupp_set 8aa708c7d733a8fe8147c37aa98694304133cca5`',
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-                
-                await this.bot.sendMessage(chatId,
-                    `🔑 Текущий ключ Smartsupp:\n\n` +
-                    `\`${currentKey}\`\n\n` +
-                    `💡 Для изменения используйте:\n` +
-                    `\`/smartsupp_set <новый_ключ>\``,
-                    { parse_mode: 'Markdown' }
-                );
-            } catch (error) {
-                console.error('❌ Ошибка /smartsupp_key:', error);
-                await this.bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
-            }
-        });
-
-        // 7. Команда /smartsupp_set - установить новый ключ
-        this.bot.onText(/\/smartsupp_set (.+)/, async (msg, match) => {
-            try {
-                const chatId = String(msg.chat.id);
-                
-                const newKey = match[1].trim();
-                
-                if (!newKey || newKey.length < 10) {
-                    await this.bot.sendMessage(chatId,
-                        '❌ Ошибка: ключ слишком короткий\n\n' +
-                        'Минимальная длина ключа: 10 символов\n\n' +
-                        'Пример:\n' +
-                        '`/smartsupp_set 8aa708c7d733a8fe8147c37aa98694304133cca5`',
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-                
-                // Устанавливаем новый ключ
-                await smartsuppKeyManager.setKey(newKey);
-                
-                await this.bot.sendMessage(chatId,
-                    `✅ Ключ Smartsupp успешно обновлен!\n\n` +
-                    `🔑 Новый ключ:\n` +
-                    `\`${newKey}\`\n\n` +
-                    `📝 Изменения применены:\n` +
-                    `• HTML файл обновлен\n` +
-                    `• Ключ сохранен в файл\n\n` +
-                    `⚠️ Для применения изменений на сайте может потребоваться перезагрузка страницы`,
-                    { parse_mode: 'Markdown' }
-                );
-                
-                console.log(`✅ [SMARTSUPP KEY] Ключ обновлен через Telegram бота пользователем ${msg.from?.username || msg.from?.id}`);
-            } catch (error) {
-                console.error('❌ Ошибка /smartsupp_set:', error);
-                await this.bot.sendMessage(msg.chat.id, 
-                    `❌ Ошибка обновления ключа:\n\n\`${error.message}\``,
-                    { parse_mode: 'Markdown' }
-                );
             }
         });
         
