@@ -1,16 +1,19 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { saveMessage } = require('./database');
+const smartsuppKeyManager = require('./smartsuppKeyManager');
 
 class TelegramSupportBot {
-    constructor(token, operatorChatId, db) {
+    constructor(token, operatorChatId, db, smartsuppAPI = null) {
         if (!token || !operatorChatId || !db) {
             throw new Error('TelegramSupportBot: token, operatorChatId и db обязательны');
         }
         
         this.operatorChatId = String(operatorChatId);
         this.db = db;
+        this.smartsuppAPI = smartsuppAPI;
         this.activeChats = new Map();
         this.pendingReply = null;
+        this.chatIdToSupportToken = new Map(); // Маппинг chatId Smartsupp -> supportToken
         
         // Создаем бота с polling: true сразу
         this.bot = new TelegramBot(token, { polling: true });
@@ -92,6 +95,12 @@ class TelegramSupportBot {
                         console.log(`💾 [MSG] Сохранение: токен=${supportToken}, messageFrom=0`);
                         const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
                         console.log(`✅ [MSG] Сохранено: ID=${savedMessage.id}, messageFrom=${savedMessage.messageFrom}`);
+                        
+                        // Отправляем в Smartsupp, если это чат из Smartsupp
+                        if (supportToken.startsWith('SMARTSUPP_')) {
+                            await this.sendToSmartsupp(supportToken, text);
+                        }
+                        
                         await this.bot.sendMessage(chatId, 
                             `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
                         );
@@ -143,6 +152,11 @@ class TelegramSupportBot {
                 
                 const savedMessage = await saveMessage(this.db, supportToken, replyText, null, 0);
                 console.log(`✅ [REPLY CMD] Сохранено: ID=${savedMessage.id}`);
+                
+                // Отправляем в Smartsupp, если это чат из Smartsupp
+                if (supportToken.startsWith('SMARTSUPP_')) {
+                    await this.sendToSmartsupp(supportToken, replyText);
+                }
                 
                 await this.bot.sendMessage(chatId, 
                     `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
@@ -206,6 +220,94 @@ class TelegramSupportBot {
                 console.error('❌ Ошибка /history:', error);
             }
         });
+
+        // 6. Команда /smartsupp_key - показать текущий ключ
+        this.bot.onText(/\/smartsupp_key/, async (msg) => {
+            try {
+                const chatId = String(msg.chat.id);
+                if (chatId !== this.operatorChatId) return;
+                
+                const currentKey = await smartsuppKeyManager.getCurrentKey();
+                
+                if (!currentKey) {
+                    await this.bot.sendMessage(chatId, 
+                        '⚠️ Ключ Smartsupp не найден\n\n' +
+                        'Используйте команду:\n' +
+                        '`/smartsupp_set <ключ>`\n\n' +
+                        'Пример:\n' +
+                        '`/smartsupp_set 8aa708c7d733a8fe8147c37aa98694304133cca5`',
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+                
+                // Показываем ключ с маскировкой (первые 8 и последние 4 символа)
+                const maskedKey = currentKey.length > 12 
+                    ? `${currentKey.substring(0, 8)}...${currentKey.substring(currentKey.length - 4)}`
+                    : currentKey;
+                
+                await this.bot.sendMessage(chatId,
+                    `🔑 Текущий ключ Smartsupp:\n\n` +
+                    `\`${maskedKey}\`\n\n` +
+                    `📋 Полный ключ:\n` +
+                    `\`${currentKey}\`\n\n` +
+                    `💡 Для изменения используйте:\n` +
+                    `\`/smartsupp_set <новый_ключ>\``,
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (error) {
+                console.error('❌ Ошибка /smartsupp_key:', error);
+                await this.bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
+            }
+        });
+
+        // 7. Команда /smartsupp_set - установить новый ключ
+        this.bot.onText(/\/smartsupp_set (.+)/, async (msg, match) => {
+            try {
+                const chatId = String(msg.chat.id);
+                if (chatId !== this.operatorChatId) return;
+                
+                const newKey = match[1].trim();
+                
+                if (!newKey || newKey.length < 10) {
+                    await this.bot.sendMessage(chatId,
+                        '❌ Ошибка: ключ слишком короткий\n\n' +
+                        'Минимальная длина ключа: 10 символов\n\n' +
+                        'Пример:\n' +
+                        '`/smartsupp_set 8aa708c7d733a8fe8147c37aa98694304133cca5`',
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+                
+                // Устанавливаем новый ключ
+                await smartsuppKeyManager.setKey(newKey);
+                
+                // Показываем маскированный ключ
+                const maskedKey = newKey.length > 12 
+                    ? `${newKey.substring(0, 8)}...${newKey.substring(newKey.length - 4)}`
+                    : newKey;
+                
+                await this.bot.sendMessage(chatId,
+                    `✅ Ключ Smartsupp успешно обновлен!\n\n` +
+                    `🔑 Новый ключ:\n` +
+                    `\`${maskedKey}\`\n\n` +
+                    `📝 Изменения применены:\n` +
+                    `• HTML файл обновлен\n` +
+                    `• Ключ сохранен в файл\n\n` +
+                    `⚠️ Для применения изменений на сайте может потребоваться перезагрузка страницы`,
+                    { parse_mode: 'Markdown' }
+                );
+                
+                console.log(`✅ [SMARTSUPP KEY] Ключ обновлен через Telegram бота пользователем ${msg.from?.username || msg.from?.id}`);
+            } catch (error) {
+                console.error('❌ Ошибка /smartsupp_set:', error);
+                await this.bot.sendMessage(msg.chat.id, 
+                    `❌ Ошибка обновления ключа:\n\n\`${error.message}\``,
+                    { parse_mode: 'Markdown' }
+                );
+            }
+        });
         
         console.log('✅ Обработчики зарегистрированы');
     }
@@ -264,6 +366,17 @@ class TelegramSupportBot {
             }
             
             this.activeChats.set(supportToken, sentMsg.message_id);
+            
+            // Если supportToken содержит chatId Smartsupp, сохраняем маппинг
+            if (supportToken.startsWith('SMARTSUPP_')) {
+                const parts = supportToken.split('_');
+                if (parts.length >= 2) {
+                    const smartsuppChatId = parts[1];
+                    this.chatIdToSupportToken.set(smartsuppChatId, supportToken);
+                    console.log(`📝 [SMARTSUPP] Сохранен маппинг: chatId=${smartsuppChatId} -> token=${supportToken}`);
+                }
+            }
+            
             console.log(`✅ Сообщение отправлено оператору: токен=${supportToken}, message_id=${sentMsg.message_id}`);
         } catch (error) {
             console.error('❌ Ошибка отправки в Telegram:', error.message);
@@ -332,6 +445,45 @@ class TelegramSupportBot {
         }
         
         return null;
+    }
+
+    // Отправка ответа в Smartsupp
+    async sendToSmartsupp(supportToken, message) {
+        if (!this.smartsuppAPI) {
+            console.warn('⚠️ [SMARTSUPP] API не инициализирован');
+            return;
+        }
+
+        try {
+            // Извлекаем chatId из supportToken (формат: SMARTSUPP_<chatId>_<visitorId>)
+            let chatId = null;
+            if (supportToken.startsWith('SMARTSUPP_')) {
+                const parts = supportToken.split('_');
+                if (parts.length >= 2) {
+                    chatId = parts[1];
+                }
+            }
+            
+            // Если не нашли в токене, ищем в маппинге
+            if (!chatId) {
+                for (const [cid, token] of this.chatIdToSupportToken.entries()) {
+                    if (token === supportToken) {
+                        chatId = cid;
+                        break;
+                    }
+                }
+            }
+
+            if (!chatId) {
+                console.warn(`⚠️ [SMARTSUPP] ChatId не найден для токена: ${supportToken}`);
+                return;
+            }
+
+            await this.smartsuppAPI.sendMessage(chatId, message);
+            console.log(`✅ [SMARTSUPP] Сообщение отправлено в Smartsupp: chatId=${chatId}, token=${supportToken}`);
+        } catch (error) {
+            console.error('❌ [SMARTSUPP] Ошибка отправки в Smartsupp:', error);
+        }
     }
 }
 
