@@ -132,19 +132,36 @@ app.post('/api/support/getMessages1', async (req, res) => {
         }
         
         // Убеждаемся, что messageFrom всегда число и валидируем
-        const formattedMessages = messages.map(m => {
-            const messageFromNum = parseInt(m.messageFrom, 10);
-            if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
-                console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom в БД: ${m.messageFrom} (тип: ${typeof m.messageFrom}) для сообщения ID=${m.id}`);
-            }
-            return {
-                id: m.id,
-                message: m.message,
-                image: m.image,
-                messageFrom: messageFromNum, // Гарантированно число: 0 или 1
-                createdAt: m.createdAt
-            };
-        });
+        const formattedMessages = messages
+            .map(m => {
+                // Обработка NULL или undefined
+                let messageFrom = m.messageFrom;
+                if (messageFrom === null || messageFrom === undefined) {
+                    console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: messageFrom = NULL для сообщения ID=${m.id}, токен=${supportToken}`);
+                    messageFrom = 1; // По умолчанию клиент для старых записей
+                }
+                
+                const messageFromNum = parseInt(messageFrom, 10);
+                if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
+                    console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom в БД: ${m.messageFrom} (тип: ${typeof m.messageFrom}) для сообщения ID=${m.id}`);
+                    // Исправляем некорректные данные - устанавливаем 1 (клиент) по умолчанию
+                    return {
+                        id: m.id,
+                        message: m.message,
+                        image: m.image,
+                        messageFrom: 1, // Исправляем на клиента
+                        createdAt: m.createdAt
+                    };
+                }
+                return {
+                    id: m.id,
+                    message: m.message,
+                    image: m.image,
+                    messageFrom: messageFromNum, // Гарантированно число: 0 или 1
+                    createdAt: m.createdAt
+                };
+            })
+            .filter(m => m.messageFrom === 0 || m.messageFrom === 1); // Фильтруем только валидные
         
         console.log(`📤 Отправка ${formattedMessages.length} сообщений клиенту для токена ${supportToken}`);
         

@@ -28,11 +28,19 @@ async function initDatabase() {
                     supportToken TEXT NOT NULL,
                     message TEXT,
                     image TEXT,
-                    messageFrom INTEGER NOT NULL,
+                    messageFrom INTEGER NOT NULL DEFAULT 1,
                     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
-            console.log('Таблица messages создана/проверена');
+            
+            // Исправляем существующие записи с NULL или некорректными значениями
+            await pgClient.query(`
+                UPDATE messages 
+                SET messageFrom = 1 
+                WHERE messageFrom IS NULL OR messageFrom NOT IN (0, 1)
+            `);
+            
+            console.log('Таблица messages создана/проверена, исправлены некорректные записи');
             return pgClient;
         } catch (err) {
             console.error('Ошибка подключения к PostgreSQL:', err.message);
@@ -58,7 +66,7 @@ async function initDatabase() {
                     supportToken TEXT NOT NULL,
                     message TEXT,
                     image TEXT,
-                    messageFrom INTEGER NOT NULL,
+                    messageFrom INTEGER NOT NULL DEFAULT 1,
                     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             `, (err) => {
@@ -67,8 +75,20 @@ async function initDatabase() {
                     reject(err);
                     return;
                 }
-                console.log('Таблица messages создана/проверена');
-                resolve(db);
+                
+                // Исправляем существующие записи с NULL или некорректными значениями
+                db.run(`
+                    UPDATE messages 
+                    SET messageFrom = 1 
+                    WHERE messageFrom IS NULL OR messageFrom NOT IN (0, 1)
+                `, (updateErr) => {
+                    if (updateErr) {
+                        console.error('Ошибка исправления записей:', updateErr.message);
+                    } else {
+                        console.log('Таблица messages создана/проверена, исправлены некорректные записи');
+                    }
+                    resolve(db);
+                });
             });
         });
     }
@@ -117,11 +137,33 @@ async function getMessages(db, supportToken) {
             `SELECT * FROM messages WHERE supportToken = $1 ORDER BY createdAt ASC`,
             [supportToken]
         );
-        // Убеждаемся, что messageFrom всегда число
-        const normalized = result.rows.map(row => ({
-            ...row,
-            messageFrom: parseInt(row.messageFrom, 10)
-        }));
+        // Убеждаемся, что messageFrom всегда число (0 или 1)
+        const normalized = result.rows.map(row => {
+            let messageFrom = row.messageFrom;
+            
+            // Обработка NULL или undefined
+            if (messageFrom === null || messageFrom === undefined) {
+                console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: messageFrom = NULL для сообщения ID=${row.id}, токен=${supportToken}`);
+                // Пытаемся определить по контексту или устанавливаем значение по умолчанию
+                // Если это старые данные, пропускаем их или устанавливаем 1 (клиент) по умолчанию
+                messageFrom = 1; // По умолчанию считаем клиентом для старых записей
+            }
+            
+            const messageFromNum = parseInt(messageFrom, 10);
+            if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
+                console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom для ID=${row.id}: ${messageFrom} (тип: ${typeof messageFrom})`);
+                // Исправляем некорректные данные
+                return {
+                    ...row,
+                    messageFrom: 1 // По умолчанию клиент
+                };
+            }
+            
+            return {
+                ...row,
+                messageFrom: messageFromNum
+            };
+        });
         console.log(`📥 Получено из PostgreSQL для токена ${supportToken}: ${normalized.length} сообщений`);
         normalized.forEach((m, i) => {
             if (i < 3 || i >= normalized.length - 3) {
@@ -138,11 +180,30 @@ async function getMessages(db, supportToken) {
                     reject(err);
                     return;
                 }
-                // Убеждаемся, что messageFrom всегда число
-                const normalized = rows.map(row => ({
-                    ...row,
-                    messageFrom: parseInt(row.messageFrom, 10)
-                }));
+                // Убеждаемся, что messageFrom всегда число (0 или 1)
+                const normalized = rows.map(row => {
+                    let messageFrom = row.messageFrom;
+                    
+                    // Обработка NULL или undefined
+                    if (messageFrom === null || messageFrom === undefined) {
+                        console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: messageFrom = NULL для сообщения ID=${row.id}, токен=${supportToken}`);
+                        messageFrom = 1; // По умолчанию клиент
+                    }
+                    
+                    const messageFromNum = parseInt(messageFrom, 10);
+                    if (isNaN(messageFromNum) || (messageFromNum !== 0 && messageFromNum !== 1)) {
+                        console.error(`❌ КРИТИЧЕСКАЯ ОШИБКА: Некорректный messageFrom для ID=${row.id}: ${messageFrom} (тип: ${typeof messageFrom})`);
+                        return {
+                            ...row,
+                            messageFrom: 1 // По умолчанию клиент
+                        };
+                    }
+                    
+                    return {
+                        ...row,
+                        messageFrom: messageFromNum
+                    };
+                });
                 console.log(`📥 Получено из SQLite для токена ${supportToken}: ${normalized.length} сообщений`);
                 normalized.forEach((m, i) => {
                     if (i < 3 || i >= normalized.length - 3) {
