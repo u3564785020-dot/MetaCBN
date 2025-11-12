@@ -62,9 +62,13 @@ class TelegramSupportBot {
     setupHandlers() {
         console.log(`🔧 Настройка обработчиков Telegram бота...`);
         
-        // ТЕСТОВЫЙ ОБРАБОТЧИК: логируем ВСЕ события для диагностики
-        this.bot.on('*', (msg) => {
-            console.log(`🔔 TELEGRAM EVENT RECEIVED:`, msg.update_id, msg.message?.chat?.id, msg.message?.text?.substring(0, 50));
+        // КРИТИЧЕСКИЙ ОБРАБОТЧИК: логируем ВСЕ входящие обновления
+        this.bot.on('polling_error', (error) => {
+            console.error(`❌ POLLING ERROR:`, error.message, error.code);
+        });
+        
+        this.bot.on('error', (error) => {
+            console.error(`❌ BOT ERROR:`, error.message);
         });
         
         // Обработка callback кнопок (кнопка "Ответить")
@@ -95,17 +99,20 @@ class TelegramSupportBot {
         });
 
         // Обработка всех текстовых сообщений
+        // ВАЖНО: используем 'message' для всех типов сообщений
         this.bot.on('message', async (msg) => {
-            const chatId = msg.chat.id;
-            const text = msg.text;
-
-            console.log(`📨 TELEGRAM MESSAGE RECEIVED:`);
-            console.log(`   ChatId: ${chatId} (тип: ${typeof chatId})`);
+            // ЛОГИРУЕМ ВСЕ сообщения БЕЗ ФИЛЬТРОВ
+            console.log(`📨📨📨 TELEGRAM MESSAGE RECEIVED 📨📨📨`);
+            console.log(`   Update ID: ${msg.message_id || 'N/A'}`);
+            console.log(`   ChatId: ${msg.chat?.id} (тип: ${typeof msg.chat?.id})`);
             console.log(`   OperatorChatId: ${this.operatorChatId} (тип: ${typeof this.operatorChatId})`);
-            console.log(`   Text: "${text}"`);
-            console.log(`   IsOperator: ${chatId.toString() === this.operatorChatId.toString()}`);
-            console.log(`   Username: @${msg.from?.username || 'unknown'}`);
-            console.log(`   FirstName: ${msg.from?.first_name || 'unknown'}`);
+            console.log(`   Text: "${msg.text || msg.caption || 'NO TEXT'}"`);
+            console.log(`   Message Type: ${msg.photo ? 'photo' : msg.document ? 'document' : 'text'}`);
+            console.log(`   From: @${msg.from?.username || msg.from?.first_name || 'unknown'} (ID: ${msg.from?.id})`);
+            console.log(`   Full message object keys:`, Object.keys(msg));
+            
+            const chatId = msg.chat.id;
+            const text = msg.text || msg.caption;
 
             // Игнорируем служебные сообщения и команды
             if (msg.photo || msg.document || msg.sticker) {
