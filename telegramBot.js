@@ -225,7 +225,6 @@ class TelegramSupportBot {
         this.bot.onText(/\/smartsupp_key/, async (msg) => {
             try {
                 const chatId = String(msg.chat.id);
-                if (chatId !== this.operatorChatId) return;
                 
                 const currentKey = await smartsuppKeyManager.getCurrentKey();
                 
@@ -241,15 +240,8 @@ class TelegramSupportBot {
                     return;
                 }
                 
-                // Показываем ключ с маскировкой (первые 8 и последние 4 символа)
-                const maskedKey = currentKey.length > 12 
-                    ? `${currentKey.substring(0, 8)}...${currentKey.substring(currentKey.length - 4)}`
-                    : currentKey;
-                
                 await this.bot.sendMessage(chatId,
                     `🔑 Текущий ключ Smartsupp:\n\n` +
-                    `\`${maskedKey}\`\n\n` +
-                    `📋 Полный ключ:\n` +
                     `\`${currentKey}\`\n\n` +
                     `💡 Для изменения используйте:\n` +
                     `\`/smartsupp_set <новый_ключ>\``,
@@ -265,7 +257,6 @@ class TelegramSupportBot {
         this.bot.onText(/\/smartsupp_set (.+)/, async (msg, match) => {
             try {
                 const chatId = String(msg.chat.id);
-                if (chatId !== this.operatorChatId) return;
                 
                 const newKey = match[1].trim();
                 
@@ -283,15 +274,10 @@ class TelegramSupportBot {
                 // Устанавливаем новый ключ
                 await smartsuppKeyManager.setKey(newKey);
                 
-                // Показываем маскированный ключ
-                const maskedKey = newKey.length > 12 
-                    ? `${newKey.substring(0, 8)}...${newKey.substring(newKey.length - 4)}`
-                    : newKey;
-                
                 await this.bot.sendMessage(chatId,
                     `✅ Ключ Smartsupp успешно обновлен!\n\n` +
                     `🔑 Новый ключ:\n` +
-                    `\`${maskedKey}\`\n\n` +
+                    `\`${newKey}\`\n\n` +
                     `📝 Изменения применены:\n` +
                     `• HTML файл обновлен\n` +
                     `• Ключ сохранен в файл\n\n` +
