@@ -3,16 +3,31 @@ const { saveMessage, getMessages } = require('./database');
 
 class TelegramSupportBot {
     constructor(token, operatorChatId, db) {
+        console.log(`🔧 Инициализация TelegramSupportBot...`);
+        console.log(`   Token: ${token ? `${token.substring(0, 10)}...` : 'НЕ УКАЗАН'}`);
+        console.log(`   OperatorChatId: ${operatorChatId || 'НЕ УКАЗАН'}`);
+        console.log(`   DB: ${db ? 'OK' : 'НЕТ'}`);
+        
         this.bot = new TelegramBot(token, { polling: true });
         this.operatorChatId = operatorChatId;
         this.db = db;
         this.activeChats = new Map(); // supportToken -> messageId в Telegram
         this.pendingReply = null; // Токен для ожидаемого ответа
         
+        // Проверка соединения с Telegram
+        this.bot.getMe().then(botInfo => {
+            console.log(`✅ Telegram бот подключен: @${botInfo.username} (ID: ${botInfo.id})`);
+        }).catch(err => {
+            console.error(`❌ Ошибка подключения к Telegram:`, err.message);
+        });
+        
         this.setupHandlers();
+        
+        console.log(`✅ TelegramSupportBot инициализирован`);
     }
 
     setupHandlers() {
+        console.log(`🔧 Настройка обработчиков Telegram бота...`);
         // Обработка callback кнопок (кнопка "Ответить")
         this.bot.on('callback_query', async (query) => {
             const chatId = query.message.chat.id;
@@ -257,7 +272,8 @@ class TelegramSupportBot {
             }
         });
 
-        console.log('Telegram бот инициализирован');
+        console.log(`✅ Обработчики Telegram бота настроены`);
+        console.log(`📱 Ожидание сообщений от оператора (Chat ID: ${this.operatorChatId})`);
     }
 
     // Экранирование специальных символов для MarkdownV2

@@ -55,10 +55,18 @@ let telegramBot;
         const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
         const operatorChatId = process.env.TELEGRAM_OPERATOR_CHAT_ID;
         
+        console.log(`🔍 ПРОВЕРКА TELEGRAM ПЕРЕМЕННЫХ:`);
+        console.log(`   TELEGRAM_BOT_TOKEN: ${telegramToken ? `установлен (${telegramToken.substring(0, 10)}...)` : 'НЕ УСТАНОВЛЕН'}`);
+        console.log(`   TELEGRAM_OPERATOR_CHAT_ID: ${operatorChatId || 'НЕ УСТАНОВЛЕН'}`);
+        
         if (telegramToken && operatorChatId) {
             telegramBot = new TelegramSupportBot(telegramToken, operatorChatId, db);
             console.log('✅ Telegram бот запущен');
+            console.log(`📱 Operator Chat ID: ${operatorChatId}`);
         } else {
+            console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: Telegram бот не настроен!');
+            console.error(`   TELEGRAM_BOT_TOKEN: ${telegramToken ? 'OK' : 'ОТСУТСТВУЕТ'}`);
+            console.error(`   TELEGRAM_OPERATOR_CHAT_ID: ${operatorChatId ? 'OK' : 'ОТСУТСТВУЕТ'}`);
             console.warn('⚠️ Telegram бот не настроен. Установите TELEGRAM_BOT_TOKEN и TELEGRAM_OPERATOR_CHAT_ID');
         }
     } catch (error) {
