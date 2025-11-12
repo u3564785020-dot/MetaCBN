@@ -26,6 +26,7 @@ class TelegramSupportBot {
                 const supportToken = data.replace('reply_', '');
                 // Сохраняем токен для следующего сообщения
                 this.pendingReply = supportToken;
+                console.log(`Кнопка "Ответить" нажата. Установлен pendingReply: ${supportToken}`);
                 
                 await this.bot.answerCallbackQuery(query.id);
                 await this.bot.sendMessage(chatId, 
@@ -49,30 +50,40 @@ class TelegramSupportBot {
             if (chatId.toString() === this.operatorChatId.toString()) {
                 let supportToken = null;
                 
+                console.log(`Получено сообщение от оператора. Text: "${text}", Reply: ${!!msg.reply_to_message}, PendingReply: ${this.pendingReply}`);
+                
                 // Проверяем reply на сообщение
                 if (msg.reply_to_message) {
                     supportToken = this.findActiveChatByReply(msg);
+                    console.log(`Токен из reply: ${supportToken}`);
                 }
                 
                 // Или используем сохраненный токен из callback
                 if (!supportToken && this.pendingReply) {
                     supportToken = this.pendingReply;
+                    console.log(`Используется pendingReply: ${supportToken}`);
                     this.pendingReply = null;
                 }
                 
                 if (supportToken) {
-                    // Сохраняем ответ оператора в БД
-                    await saveMessage(this.db, supportToken, text, null, 0);
-                    console.log(`Оператор ответил на чат ${supportToken}: ${text}`);
-                    
-                    // Отправляем подтверждение оператору
-                    await this.bot.sendMessage(chatId, `✅ Ответ отправлен клиенту с токеном: ${supportToken}`);
+                    try {
+                        // Сохраняем ответ оператора в БД
+                        const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
+                        console.log(`✅ Оператор ответил на чат ${supportToken}: "${text}". Сохранено в БД с ID: ${savedMessage.id}`);
+                        
+                        // Отправляем подтверждение оператору
+                        await this.bot.sendMessage(chatId, `✅ Ответ отправлен клиенту с токеном: ${supportToken}`);
+                    } catch (error) {
+                        console.error(`❌ Ошибка сохранения ответа оператора:`, error);
+                        await this.bot.sendMessage(chatId, `❌ Ошибка отправки ответа: ${error.message}`);
+                    }
                 } else {
                     // Если нет активного чата, показываем инструкцию
+                    console.log(`⚠️ Не удалось определить токен для ответа`);
                     await this.bot.sendMessage(chatId, 
                         '❓ Не понятно, кому отвечать.\n\n' +
                         'Для ответа клиенту:\n' +
-                        '1. Нажмите кнопку "Ответить" под сообщением клиента\n' +
+                        '1. Нажмите кнопку "💬 Ответить" под сообщением клиента\n' +
                         '2. Или ответьте на сообщение клиента (reply)\n' +
                         '3. Или используйте команду: /reply <supportToken> <сообщение>'
                     );
@@ -193,13 +204,32 @@ class TelegramSupportBot {
             return null;
         }
 
-        // Ищем токен в сохраненных активных чатах
+        const repliedMessage = msg.reply_to_message;
+        const repliedMessageId = repliedMessage.message_id;
+
+        // Сначала ищем токен в сохраненных активных чатах по message_id
         for (const [token, messageId] of this.activeChats.entries()) {
-            if (messageId === msg.reply_to_message.message_id) {
+            if (messageId === repliedMessageId) {
+                console.log(`Найден токен по message_id: ${token}`);
                 return token;
             }
         }
 
+        // Если не нашли по message_id, пытаемся извлечь токен из текста сообщения
+        if (repliedMessage.text || repliedMessage.caption) {
+            const text = repliedMessage.text || repliedMessage.caption;
+            // Ищем токен в формате "Токен: `abc123`" или просто в тексте
+            const tokenMatch = text.match(/Токен:\s*`?([a-zA-Z0-9]+)`?/i);
+            if (tokenMatch && tokenMatch[1]) {
+                const token = tokenMatch[1];
+                console.log(`Извлечен токен из текста сообщения: ${token}`);
+                // Сохраняем связь для будущих reply
+                this.activeChats.set(token, repliedMessageId);
+                return token;
+            }
+        }
+
+        console.log(`Не удалось найти токен для message_id: ${repliedMessageId}`);
         return null;
     }
 }
