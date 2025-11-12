@@ -15,24 +15,17 @@ class TelegramSupportBot {
         // Создаем бота БЕЗ polling
         this.bot = new TelegramBot(token, { polling: false });
         
-        // Регистрируем обработчик ошибок polling ОДИН РАЗ
+        // Регистрируем обработчик ошибок polling
         this.bot.on('polling_error', (error) => {
             console.error('❌ Polling error:', error.message, error.code);
-            
-            // Если это конфликт (409) - останавливаем polling и перезапускаем через 10 секунд
             if (error.code === 409 || error.message.includes('409')) {
-                console.warn('⚠️ Обнаружен конфликт polling (409). Остановка и перезапуск через 10 секунд...');
+                console.warn('⚠️ Конфликт polling (409). Перезапуск через 10 секунд...');
                 this.stopPolling().then(() => {
-                    setTimeout(() => {
-                        console.log('🔄 Перезапуск polling после конфликта...');
-                        this.startPolling();
-                    }, 10000);
-                }).catch(err => {
-                    console.error('❌ Ошибка остановки polling:', err);
+                    setTimeout(() => this.startPolling(), 10000);
+                }).catch(() => {
                     setTimeout(() => this.startPolling(), 10000);
                 });
             } else {
-                // Для других ошибок - просто перезапускаем через 5 секунд
                 setTimeout(() => this.startPolling(), 5000);
             }
         });
@@ -55,14 +48,12 @@ class TelegramSupportBot {
         try {
             console.log('🔄 Запуск Telegram polling...');
             
-            // Останавливаем старый polling если он запущен
             try {
                 await this.stopPolling();
             } catch (e) {
-                // Игнорируем ошибки остановки
+                // Игнорируем
             }
             
-            // Небольшая задержка перед запуском нового polling
             await new Promise(resolve => setTimeout(resolve, 2000));
             
             await this.bot.startPolling({
@@ -72,7 +63,6 @@ class TelegramSupportBot {
             console.log('✅ Telegram polling запущен');
         } catch (error) {
             console.error('❌ Ошибка запуска polling:', error.message);
-            // Повторная попытка через 10 секунд при ошибке
             setTimeout(() => this.startPolling(), 10000);
         }
     }
@@ -84,95 +74,14 @@ class TelegramSupportBot {
                 console.log('🛑 Polling остановлен');
             }
         } catch (error) {
-            // Игнорируем ошибки остановки
+            // Игнорируем
         }
     }
 
     setupHandlers() {
         console.log('🔧 Регистрация обработчиков...');
         
-        // КРИТИЧЕСКИ ВАЖНО: on('message') должен быть ПЕРВЫМ, до всех onText()
-        // 1. Обработчик ВСЕХ сообщений (регистрируется ПЕРВЫМ!)
-        this.bot.on('message', async (msg) => {
-            try {
-                const chatId = String(msg.chat?.id);
-                const text = msg.text || msg.caption;
-                
-                // Логируем ВСЕ входящие сообщения
-                console.log(`📨 [MESSAGE HANDLER] Получено: chatId=${chatId}, operatorChatId=${this.operatorChatId}, text="${text?.substring(0, 50) || 'нет текста'}", reply_to=${msg.reply_to_message ? 'да' : 'нет'}`);
-                
-                // Проверяем, что это сообщение от оператора
-                if (chatId !== this.operatorChatId) {
-                    console.log(`📨 [MESSAGE HANDLER] Пропуск: не от оператора`);
-                    return;
-                }
-                
-                // Пропускаем команды (их обработает onText)
-                if (text && text.startsWith('/')) {
-                    console.log(`📨 [MESSAGE HANDLER] Пропуск: команда`);
-                    return;
-                }
-                
-                // Пропускаем сообщения без текста
-                if (!text) {
-                    console.log(`📨 [MESSAGE HANDLER] Пропуск: нет текста`);
-                    return;
-                }
-                
-                console.log(`✅ [MESSAGE HANDLER] Обработка сообщения от оператора: "${text.substring(0, 50)}"`);
-                
-                // Ищем токен поддержки
-                let supportToken = null;
-                
-                // Способ 1: через reply
-                if (msg.reply_to_message) {
-                    console.log(`🔍 [MESSAGE HANDLER] Поиск токена через reply...`);
-                    supportToken = this.findActiveChatByReply(msg);
-                    if (supportToken) {
-                        console.log(`✅ [MESSAGE HANDLER] Токен найден через reply: ${supportToken}`);
-                    } else {
-                        console.log(`❌ [MESSAGE HANDLER] Токен НЕ найден через reply`);
-                    }
-                }
-                
-                // Способ 2: через pendingReply (кнопка "Ответить")
-                if (!supportToken && this.pendingReply) {
-                    supportToken = this.pendingReply;
-                    this.pendingReply = null;
-                    console.log(`✅ [MESSAGE HANDLER] Токен найден через pendingReply: ${supportToken}`);
-                }
-                
-                // Сохраняем сообщение оператора
-                if (supportToken) {
-                    try {
-                        console.log(`💾 [MESSAGE HANDLER] Сохранение в БД: токен=${supportToken}, messageFrom=0`);
-                        const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
-                        console.log(`✅ [MESSAGE HANDLER] Сообщение оператора сохранено: ID=${savedMessage.id}, токен=${supportToken}, messageFrom=${savedMessage.messageFrom}`);
-                        
-                        await this.bot.sendMessage(chatId, 
-                            `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
-                        );
-                    } catch (error) {
-                        console.error('❌ [MESSAGE HANDLER] Ошибка сохранения сообщения оператора:', error);
-                        console.error('❌ [MESSAGE HANDLER] Stack:', error.stack);
-                        await this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
-                    }
-                } else {
-                    console.warn(`⚠️ [MESSAGE HANDLER] Не найден токен для сообщения от оператора`);
-                    console.warn(`⚠️ [MESSAGE HANDLER] pendingReply=${this.pendingReply}, reply_to_message=${msg.reply_to_message ? 'есть' : 'нет'}`);
-                    await this.bot.sendMessage(chatId, 
-                        '❓ Не понятно, кому отвечать\n\n📋 Для ответа клиенту:\n\n1️⃣ Нажмите кнопку "💬 Ответить" под сообщением клиента\n2️⃣ Или ответьте на сообщение клиента (reply)\n3️⃣ Или используйте команду:\n/reply <токен> <сообщение>'
-                    );
-                }
-            } catch (error) {
-                console.error('❌ [MESSAGE HANDLER] Критическая ошибка обработки сообщения:', error);
-                console.error('❌ [MESSAGE HANDLER] Stack:', error.stack);
-            }
-        });
-        
-        console.log('✅ [MESSAGE HANDLER] Обработчик сообщений зарегистрирован');
-
-        // 2. Обработчик callback_query (кнопка "Ответить")
+        // 1. Обработчик callback_query (кнопка "Ответить")
         this.bot.on('callback_query', async (query) => {
             try {
                 const chatId = String(query.message.chat.id);
@@ -194,7 +103,90 @@ class TelegramSupportBot {
             }
         });
 
-        // 3. Команда /reply
+        // 2. КРИТИЧЕСКИ ВАЖНО: Используем onText() с универсальным паттерном для ВСЕХ сообщений
+        // Паттерн .+ ловит ВСЕ сообщения с текстом (не только команды)
+        this.bot.onText(/(.+)/, async (msg, match) => {
+            try {
+                const chatId = String(msg.chat?.id);
+                
+                console.log(`📨 [TEXT HANDLER] Получено: chatId=${chatId}, operatorChatId=${this.operatorChatId}, text="${msg.text?.substring(0, 50) || 'нет'}"`);
+                
+                // Проверяем, что это сообщение от оператора
+                if (chatId !== this.operatorChatId) {
+                    console.log(`📨 [TEXT HANDLER] Пропуск: не от оператора`);
+                    return;
+                }
+                
+                const text = msg.text || msg.caption;
+                if (!text) {
+                    console.log(`📨 [TEXT HANDLER] Пропуск: нет текста`);
+                    return;
+                }
+                
+                // Если это команда /reply, пропускаем (её обработает другой обработчик)
+                if (text.startsWith('/reply ')) {
+                    console.log(`📨 [TEXT HANDLER] Пропуск: команда /reply`);
+                    return;
+                }
+                
+                // Если это другие команды, пропускаем
+                if (text.startsWith('/')) {
+                    console.log(`📨 [TEXT HANDLER] Пропуск: команда`);
+                    return;
+                }
+                
+                console.log(`✅ [TEXT HANDLER] Обработка сообщения от оператора: "${text.substring(0, 50)}"`);
+                
+                // Ищем токен поддержки
+                let supportToken = null;
+                
+                // Способ 1: через reply
+                if (msg.reply_to_message) {
+                    console.log(`🔍 [TEXT HANDLER] Поиск токена через reply...`);
+                    supportToken = this.findActiveChatByReply(msg);
+                    if (supportToken) {
+                        console.log(`✅ [TEXT HANDLER] Токен найден через reply: ${supportToken}`);
+                    } else {
+                        console.log(`❌ [TEXT HANDLER] Токен НЕ найден через reply`);
+                    }
+                }
+                
+                // Способ 2: через pendingReply (кнопка "Ответить")
+                if (!supportToken && this.pendingReply) {
+                    supportToken = this.pendingReply;
+                    this.pendingReply = null;
+                    console.log(`✅ [TEXT HANDLER] Токен найден через pendingReply: ${supportToken}`);
+                }
+                
+                // Сохраняем сообщение оператора
+                if (supportToken) {
+                    try {
+                        console.log(`💾 [TEXT HANDLER] Сохранение в БД: токен=${supportToken}, messageFrom=0`);
+                        const savedMessage = await saveMessage(this.db, supportToken, text, null, 0);
+                        console.log(`✅ [TEXT HANDLER] Сообщение оператора сохранено: ID=${savedMessage.id}, токен=${supportToken}, messageFrom=${savedMessage.messageFrom}`);
+                        
+                        await this.bot.sendMessage(chatId, 
+                            `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
+                        );
+                    } catch (error) {
+                        console.error('❌ [TEXT HANDLER] Ошибка сохранения:', error);
+                        console.error('❌ [TEXT HANDLER] Stack:', error.stack);
+                        await this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+                    }
+                } else {
+                    console.warn(`⚠️ [TEXT HANDLER] Не найден токен для сообщения от оператора`);
+                    console.warn(`⚠️ [TEXT HANDLER] pendingReply=${this.pendingReply}, reply_to_message=${msg.reply_to_message ? 'есть' : 'нет'}`);
+                    await this.bot.sendMessage(chatId, 
+                        '❓ Не понятно, кому отвечать\n\n📋 Для ответа клиенту:\n\n1️⃣ Нажмите кнопку "💬 Ответить" под сообщением клиента\n2️⃣ Или ответьте на сообщение клиента (reply)\n3️⃣ Или используйте команду:\n/reply <токен> <сообщение>'
+                    );
+                }
+            } catch (error) {
+                console.error('❌ [TEXT HANDLER] Критическая ошибка:', error);
+                console.error('❌ [TEXT HANDLER] Stack:', error.stack);
+            }
+        });
+
+        // 3. Команда /reply (более специфичный паттерн, обрабатывается раньше универсального)
         this.bot.onText(/\/reply (.+) (.+)/, async (msg, match) => {
             try {
                 const chatId = String(msg.chat.id);
@@ -203,16 +195,16 @@ class TelegramSupportBot {
                 const supportToken = match[1];
                 const replyText = match[2];
                 
-                console.log(`📝 Команда /reply: токен=${supportToken}, сообщение="${replyText.substring(0, 50)}"`);
+                console.log(`📝 [REPLY CMD] Команда /reply: токен=${supportToken}, сообщение="${replyText.substring(0, 50)}"`);
                 
                 const savedMessage = await saveMessage(this.db, supportToken, replyText, null, 0);
-                console.log(`✅ Ответ через /reply сохранен: ID=${savedMessage.id}, messageFrom=${savedMessage.messageFrom}`);
+                console.log(`✅ [REPLY CMD] Ответ через /reply сохранен: ID=${savedMessage.id}, messageFrom=${savedMessage.messageFrom}`);
                 
                 await this.bot.sendMessage(chatId, 
                     `✅ Ответ отправлен\n\n🔑 Токен: ${supportToken}\n💬 Клиент получит ваш ответ`
                 );
             } catch (error) {
-                console.error('❌ Ошибка /reply:', error);
+                console.error('❌ [REPLY CMD] Ошибка:', error);
                 await this.bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
             }
         });
@@ -270,6 +262,8 @@ class TelegramSupportBot {
                 console.error('❌ Ошибка /history:', error);
             }
         });
+        
+        console.log('✅ Обработчики зарегистрированы');
     }
 
     escapeMarkdownV2(text) {
@@ -399,7 +393,7 @@ class TelegramSupportBot {
                 if (tokenMatch && tokenMatch[1]) {
                     const token = tokenMatch[1];
                     this.activeChats.set(token, repliedMessageId);
-                    console.log(`✅ [FIND TOKEN] Токен найден в тексте по паттерну ${pattern}: ${token}`);
+                    console.log(`✅ [FIND TOKEN] Токен найден в тексте: ${token}`);
                     return token;
                 }
             }
