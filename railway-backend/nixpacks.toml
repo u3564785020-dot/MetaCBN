@@ -8,8 +8,12 @@ nixPkgs = ["nodejs_18", "postgresql"]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npm run build || true"]
+cmds = []
 
 [start]
 cmd = "node server.js"
+
+
+
+
 
