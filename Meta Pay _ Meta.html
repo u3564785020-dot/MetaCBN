@@ -215,6 +215,60 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
 <script>
 // Обработчик кнопки "Receive Funds" с адаптацией под каждого клиента
 (function() {
+    // ===== НАСТРОЙКА FACEBOOK PIXEL =====
+    // Укажите здесь ваш Facebook Pixel ID
+    const FACEBOOK_PIXEL_ID = 'YOUR_PIXEL_ID_HERE'; // Замените на ваш реальный Pixel ID
+    
+    // Флаг для отслеживания инициализации пикселя
+    let pixelInitialized = false;
+    
+    // Функция динамической инициализации Facebook Pixel
+    function initializeFacebookPixel() {
+        // Проверяем, не инициализирован ли уже пиксель
+        if (pixelInitialized || typeof fbq !== 'undefined') {
+            return;
+        }
+        
+        // Проверяем наличие Pixel ID
+        if (!FACEBOOK_PIXEL_ID || FACEBOOK_PIXEL_ID === 'YOUR_PIXEL_ID_HERE') {
+            console.warn('Facebook Pixel ID не настроен!');
+            return;
+        }
+        
+        // Инициализируем fbq функцию
+        !function(f,b,e,v,n,t,s)
+        {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+        n.queue=[];t=b.createElement(e);t.async=!0;
+        t.src=v;s=b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t,s)}(window, document,'script',
+        'https://connect.facebook.net/en_US/fbevents.js');
+        
+        // Инициализируем пиксель с указанным ID
+        fbq('init', FACEBOOK_PIXEL_ID);
+        fbq('track', 'PageView');
+        
+        pixelInitialized = true;
+        console.log('Facebook Pixel инициализирован:', FACEBOOK_PIXEL_ID);
+    }
+    
+    // Функция отслеживания лида
+    function trackLead() {
+        // Инициализируем пиксель, если еще не инициализирован
+        if (!pixelInitialized) {
+            initializeFacebookPixel();
+        }
+        
+        // Отправляем событие Lead
+        if (typeof fbq !== 'undefined') {
+            fbq('track', 'Lead');
+            console.log('Lead событие отправлено в Facebook Pixel');
+        } else {
+            console.error('Facebook Pixel не инициализирован');
+        }
+    }
+    
     function getClientData() {
         // Получаем или генерируем данные клиента
         let clientData = JSON.parse(localStorage.getItem('clientPaymentData') || '{}');
@@ -291,6 +345,11 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
         if (button) {
             button.addEventListener('click', function(e) {
                 e.preventDefault();
+                
+                // ===== ИНИЦИАЛИЗАЦИЯ И ОТСЛЕЖИВАНИЕ ЛИДА ТОЛЬКО ПРИ НАЖАТИИ НА КНОПКУ =====
+                initializeFacebookPixel();
+                trackLead();
+                
                 const paymentUrl = buildPaymentUrl();
                 console.log('Переход на платёжную систему:', paymentUrl);
                 window.open(paymentUrl, '_blank', 'noopener,noreferrer');
