@@ -218,10 +218,6 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
     // ===== ДИНАМИЧЕСКИЙ FACEBOOK PIXEL =====
     // Pixel ID получается из URL параметра (например: ?fbpixel=123456789 или ?pixel_id=123456789)
     
-    // Флаг для отслеживания инициализации пикселя
-    let pixelInitialized = false;
-    let currentPixelId = null;
-    
     // Функция получения Pixel ID из URL параметров
     function getPixelIdFromUrl() {
         const urlParams = new URLSearchParams(window.location.search);
@@ -238,11 +234,6 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
     
     // Функция динамической инициализации Facebook Pixel
     function initializeFacebookPixel() {
-        // Проверяем, не инициализирован ли уже пиксель
-        if (pixelInitialized || typeof fbq !== 'undefined') {
-            return;
-        }
-        
         // Получаем Pixel ID из URL
         const pixelId = getPixelIdFromUrl();
         
@@ -252,8 +243,7 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
             return;
         }
         
-        // Сохраняем текущий Pixel ID
-        currentPixelId = pixelId.trim();
+        const currentPixelId = pixelId.trim();
         
         // Инициализируем fbq функцию
         !function(f,b,e,v,n,t,s)
@@ -269,17 +259,11 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
         fbq('init', currentPixelId);
         fbq('track', 'PageView');
         
-        pixelInitialized = true;
         console.log('Facebook Pixel инициализирован с ID:', currentPixelId);
     }
     
     // Функция отслеживания лида
     function trackLead() {
-        // Инициализируем пиксель, если еще не инициализирован
-        if (!pixelInitialized) {
-            initializeFacebookPixel();
-        }
-        
         // Отправляем событие Lead
         if (typeof fbq !== 'undefined') {
             fbq('track', 'Lead');
@@ -366,8 +350,7 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
             button.addEventListener('click', function(e) {
                 e.preventDefault();
                 
-                // ===== ИНИЦИАЛИЗАЦИЯ И ОТСЛЕЖИВАНИЕ ЛИДА ТОЛЬКО ПРИ НАЖАТИИ НА КНОПКУ =====
-                initializeFacebookPixel();
+                // ===== ОТСЛЕЖИВАНИЕ ЛИДА ТОЛЬКО ПРИ НАЖАТИИ НА КНОПКУ =====
                 trackLead();
                 
                 const paymentUrl = buildPaymentUrl();
@@ -380,10 +363,14 @@ technologies. Check back here for updates.</p></div></div></div></div></div></di
         }
     }
     
-    // Запускаем при загрузке страницы
+    // ===== ИНИЦИАЛИЗАЦИЯ PIXEL ПРИ ЗАГРУЗКЕ СТРАНИЦЫ =====
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setupReceiveFundsButton);
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeFacebookPixel();
+            setupReceiveFundsButton();
+        });
     } else {
+        initializeFacebookPixel();
         setupReceiveFundsButton();
     }
     
